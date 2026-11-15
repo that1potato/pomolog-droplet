@@ -89,7 +89,23 @@ exact. Pauses and stops are stamped within half a second of happening.
 A file that cannot be read is moved aside under a dated name, never
 overwritten. Export CSV writes a copy to `Exports/` beside the log.
 
-## Building and installing
+## Installing
+
+1. Download `Pomodorolog.droplet.zip` from the
+   [latest release](https://github.com/that1potato/pomolog-droplet/releases/latest)
+   and unzip it.
+2. In Droppy, go to Settings, Store, Local droplets, drop
+   `Pomodorolog.droplet` there and approve it.
+
+Built and tested on Droppy 16.0.1. Droppy hasn't signed it, so Droppy asks
+again each time it opens unless "Don't ask again for local droplets" is on.
+Droppy Playground has no built-in Pomodoro, so Pomolog only works in Droppy
+itself.
+
+To update, install a newer release the same way and restart Droppy, because
+the old build keeps running until then.
+
+## Building from source
 
 Needs Xcode 26 or later and a clone of the DroppyKit SDK at the version this
 droplet pins: 1.20.1, the one Droppy 16.0.1 carries.
@@ -103,14 +119,8 @@ droppykit build            # writes .build/Pomodorolog.droplet
 droppykit validate
 ```
 
-To install:
-
-1. In Droppy, go to Settings, Store, Local droplets.
-2. Drop `.build/Pomodorolog.droplet` there and approve it.
-
-After a rebuild, drop it again and restart Droppy, because the old build keeps
-running until then. Droppy Playground has no built-in Pomodoro, so the droplet
-can only be tried in Droppy itself.
+Install the build the same way as a release, from `.build/Pomodorolog.droplet`.
+After a rebuild, drop it in again and restart Droppy.
 
 After a Droppy update, `python3 Scripts/dump-builtin-pomodoro.py` lists the
 built-in's fields in the installed Droppy. It flags any field the droplet
