@@ -132,6 +132,33 @@ Droppy:
 - **What the droplet does:** follows the built-in. Whether the log should
   leave sleep out is an open question in [TODO.md](TODO.md).
 
+## Notch moments and the takeover
+
+On 15 November 2026, a throwaway probe (stage 1 of the summit work) tested in
+Droppy 16.0.1 what a droplet may show while Droppy's own Pomodoro runs.
+
+- **Capabilities:** Droppy grants a local build every capability its manifest
+  declares (`hud`, `expanded-surface`, `shelf-read` and `shelf-write` were all
+  granted). The settings page lists them under "What it can do".
+- **HUDs are refused while the shelf is open.** That includes the moment a
+  session ends because the user pressed Next inside the shelf. With the shelf
+  closed, a card shows, even while Droppy's Pomodoro holds the notch: it
+  covers the timer briefly, and a strip sent as a countdown reached zero was
+  accepted both times.
+  - **What the droplet does:** holds a moment until the shelf closes. It
+    watches the shelf through `shelf-read`.
+- **A takeover needs `ExpandedSurfaceHosting`.** Droppy finds a droplet's
+  takeover by casting it to `ExpandedSurfaceHosting` and reading
+  `expandedSurfaceProvider`. Conforming to `ExpandedSurfaceProviding` alone
+  renders in the harness, but Droppy refuses every presentation without asking
+  for a size. Neither the 1.20.1 guides nor the World Clock example mention
+  this; the protocol's own documentation does, and the AI Stats droplet
+  (`droplets/ai-receipt` in the Store repository) does it. With the
+  conformance, a click on the widget opened a 640 × 330 takeover. Droppy
+  proposed 369 × 93 standard and 1089 × 620 at most on the display it ran on.
+- **Feedback:** `host.feedback.play(.success)` needs no capability. Whether
+  the cue was audible wasn't checked.
+
 ## Waiting on a newer Droppy
 
 - **Tools for AI apps:** `MCPToolProviding` needs DroppyKit 1.21.0, so a stable

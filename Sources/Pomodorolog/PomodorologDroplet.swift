@@ -57,6 +57,8 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     @Published private(set) var hookStatus: HookStatus = .starting
     /// The session running in Droppy's Pomodoro, as it will be logged.
     @Published private(set) var session: ActiveSession?
+    /// What the stage 1 probe last tried, for its widget. Removed before release.
+    @Published var probeStatus = "Not tried yet"
 
     private let reader = BuiltInPomodoroReader()
     private var tracker: BuiltInSessionTracker?
@@ -86,6 +88,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
 
         host.log.info("Pomolog activated, \(store.sessions.count) sessions in \(store.logURL.path)")
         diagnose("activated \(Self.version) in Droppy \(host.environment.appVersion)")
+        probeReportGrants()
         // On a later turn of the run loop: Droppy runs activate(host:) under a
         // watchdog, and the search should not count against it.
         schedule(.locate, after: 0)
@@ -208,9 +211,14 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
             case .finished(let record):
                 store?.append(record)
                 diagnose("logged \(record.sectionName), \(record.activeSeconds)s, \(record.outcome.rawValue)")
+                probeLogged(record)
             case .checkpoint(let active):
+                let reachedZero = active?.hasReachedZero == true
+                    && session?.hasReachedZero == false
+                    && active?.id == session?.id
                 store?.checkpoint(active)
                 session = active
+                if reachedZero, let active { probeZero(active) }
             }
         }
     }
@@ -242,7 +250,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
 
     /// Writes a line to Droppy's log and to `diagnostics.log` beside the
     /// session log, where it can be read without Droppy's private log.
-    private func diagnose(_ message: String) {
+    func diagnose(_ message: String) {
         host?.log.notice(message)
         guard let store else { return }
         let url = store.directory.appendingPathComponent("diagnostics.log")

@@ -10,9 +10,17 @@
     "minAPI": "1.20.0"
   },
   "minAppVersion": "15.3.0",
-  "capabilities": [],
+  "capabilities": [
+    "hud",
+    "expanded-surface",
+    "shelf-read",
+    "shelf-write"
+  ],
   "surfaces": [
-    "settings-pane"
+    "shelf-widget",
+    "expanded-surface",
+    "settings-pane",
+    "hud"
   ],
   "icon": "Pomodorolog.icon",
   "creator": {
