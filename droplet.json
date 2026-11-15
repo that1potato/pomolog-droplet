@@ -1,0 +1,36 @@
+{
+  "id": "pomodorolog",
+  "name": "Pomolog",
+  "version": "2.0.0",
+  "summary": "Logs every session of Droppy's own Pomodoro",
+  "description": "Keeps a full log of every session you run in Droppy's own Pomodoro.\n\nUse Droppy's Pomodoro as you always do. Pomolog watches it and writes each session to a log on this Mac: when it started and ended, how long it really ran, every pause, any overtime, and how it ended. Stopwatch runs and timers from the Clock app are logged too, marked as such.\n\nThe History page in Settings shows the log by day, with totals and a streak, and Export CSV makes a copy for a spreadsheet.\n\nUnofficial: Droppy has no API for its Pomodoro, so Pomolog reads Droppy's private internals. A Droppy update can stop the logging until Pomolog is updated, and the settings page says when that happens.",
+  "category": "Productivity",
+  "kit": {
+    "abi": 1,
+    "minAPI": "1.20.0"
+  },
+  "minAppVersion": "15.3.0",
+  "capabilities": [],
+  "surfaces": [
+    "settings-pane"
+  ],
+  "icon": "Pomodorolog.icon",
+  "creator": {
+    "name": "potato987",
+    "kind": "community",
+    "url": "https://github.com/that1potato",
+    "avatar": "Creator.png"
+  },
+  "source": {
+    "repository": "https://github.com/that1potato/pomolog-droplet",
+    "license": "MIT"
+  },
+  "screenshots": [],
+  "keywords": [
+    "pomodoro",
+    "timer",
+    "focus",
+    "break",
+    "log"
+  ]
+}

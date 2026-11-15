@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+.DS_Store
+shots/
+
+# Coding-agent wiring. `droppykit agent` writes it for each Mac, with
+# absolute paths to that Mac's DroppyKit clone, so it stays out of git.
+AGENTS.md
+CLAUDE.md
+.mcp.json
+.cursor/
