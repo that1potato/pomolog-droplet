@@ -57,10 +57,10 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     @Published private(set) var hookStatus: HookStatus = .starting
     /// The session running in Droppy's Pomodoro, as it will be logged.
     @Published private(set) var session: ActiveSession?
-    /// What the stage 1 probe last tried, for its widget. Removed before release.
-    @Published var probeStatus = "Not tried yet"
     /// The climb, the pantry and the stickers, worked out from the log.
     @Published private(set) var rewards = RewardsSnapshot.empty
+    /// True when the rewards come from the sample week, in the harness.
+    private(set) var isShowingSample = false
 
     private let reader = BuiltInPomodoroReader()
     private var tracker: BuiltInSessionTracker?
@@ -92,8 +92,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         }
 
         host.log.info("Pomolog activated, \(store.sessions.count) sessions in \(store.logURL.path)")
-        diagnose("activated \(Self.version) in Droppy \(host.environment.appVersion)")
-        probeReportGrants()
+        diagnose("activated \(Self.version) in Droppy \(host.environment.appVersion), granted \(host.grantedCapabilities.map(\.rawValue).sorted().joined(separator: ", "))")
         // On a later turn of the run loop: Droppy runs activate(host:) under a
         // watchdog, and the search should not count against it.
         schedule(.locate, after: 0)
@@ -123,10 +122,18 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     /// Pomodoro to log, so it shows the design's sample week instead.
     private func refreshRewards(with sessions: [SessionRecord]) {
         var records = sessions
-        if records.isEmpty, host?.environment.isHarness == true {
+        isShowingSample = records.isEmpty && host?.environment.isHarness == true
+        if isShowingSample {
             records = SampleLog.week(endingOn: today, utcOffsetSeconds: TimeZone.current.secondsFromGMT())
         }
         rewards = RewardsSnapshot(records: records, today: today)
+    }
+
+    /// The running focus's share of the climb so far, so the climber moves
+    /// while it runs. Nil when no focus is running.
+    func liveStep(at date: Date) -> ClimbStep? {
+        guard let session, session.kind == .focus, let store else { return nil }
+        return rewards.climb.provisionalStep(for: session, after: store.sessions, at: date)
     }
 
     // MARK: Commands
@@ -226,14 +233,9 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
             case .finished(let record):
                 store?.append(record)
                 diagnose("logged \(record.sectionName), \(record.activeSeconds)s, \(record.outcome.rawValue)")
-                probeLogged(record)
             case .checkpoint(let active):
-                let reachedZero = active?.hasReachedZero == true
-                    && session?.hasReachedZero == false
-                    && active?.id == session?.id
                 store?.checkpoint(active)
                 session = active
-                if reachedZero, let active { probeZero(active) }
             }
         }
     }
@@ -276,3 +278,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         try? (kept + line).write(to: url, atomically: true, encoding: .utf8)
     }
 }
+
+/// Notch moments: a summit, a sticker, a jar. The surface needs the conformance
+/// to agree with `hud` in droplet.json.
+extension PomodorologDroplet: HUDPresenting {}

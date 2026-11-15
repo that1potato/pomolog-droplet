@@ -184,9 +184,9 @@ private struct SummitPreview: View {
         return "\(summits.count): \(summits.count > 3 ? "… " : "")\(names)"
     }
 
-    /// Whole metres, grouped: `7,650`.
+    /// Whole metres climbed, grouped: `7,650`. Rounded down, as the widget does.
     static func metres(_ value: Double) -> String {
-        Int(value.rounded()).formatted()
+        Int(value.rounded(.down)).formatted()
     }
 }
 
