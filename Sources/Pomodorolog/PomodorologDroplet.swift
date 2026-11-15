@@ -68,6 +68,12 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     private var locateAttempts = 0
     private var cancellables = Set<AnyCancellable>()
 
+    /// Notch moments waiting their turn, the wait before the next, and a card
+    /// button's delayed action (NotchMoments.swift).
+    var pendingMoments: [PendingMoment] = []
+    var momentTask: Task<Void, Never>?
+    var actionTask: Task<Void, Never>?
+
     // MARK: Lifecycle
 
     public func activate(host: DropletHost) throws {
@@ -93,6 +99,11 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
 
         host.log.info("Pomolog activated, \(store.sessions.count) sessions in \(store.logURL.path)")
         diagnose("activated \(Self.version) in Droppy \(host.environment.appVersion), granted \(host.grantedCapabilities.map(\.rawValue).sorted().joined(separator: ", "))")
+        if host.environment.isHarness {
+            presentHarnessMoment()
+        } else {
+            welcomeIfFirstRun()
+        }
         // On a later turn of the run loop: Droppy runs activate(host:) under a
         // watchdog, and the search should not count against it.
         schedule(.locate, after: 0)
@@ -103,7 +114,9 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         // code, so anything left running keeps running until Droppy relaunches.
         timer?.invalidate()
         timer = nil
-        apply(tracker?.end(.interrupt, at: Date()) ?? [])
+        stopMoments()
+        // Logged, but not celebrated: the notch is no place for it now.
+        apply(tracker?.end(.interrupt, at: Date()) ?? [], celebrates: false)
         tracker = nil
         cancellables.removeAll()
         session = nil
@@ -227,12 +240,14 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         }
     }
 
-    private func apply(_ outputs: [BuiltInSessionTracker.Output]) {
+    private func apply(_ outputs: [BuiltInSessionTracker.Output], celebrates: Bool = true) {
         for output in outputs {
             switch output {
             case .finished(let record):
+                let before = rewards
                 store?.append(record)
                 diagnose("logged \(record.sectionName), \(record.activeSeconds)s, \(record.outcome.rawValue)")
+                if celebrates { celebrate(since: before) }
             case .checkpoint(let active):
                 store?.checkpoint(active)
                 session = active
@@ -279,6 +294,6 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     }
 }
 
-/// Notch moments: a summit, a sticker, a jar. The surface needs the conformance
-/// to agree with `hud` in droplet.json.
+/// Notch moments: a jar, a summit, a sticker (NotchMoments.swift). The
+/// conformance agrees with `hud` in droplet.json.
 extension PomodorologDroplet: HUDPresenting {}

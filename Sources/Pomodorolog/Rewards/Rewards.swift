@@ -16,6 +16,8 @@ struct RewardsSnapshot: Equatable, Sendable {
     let pantry: Pantry
     /// Earned stickers, oldest first.
     let stickers: [EarnedSticker]
+    /// When the first focus of `today` started, or nil before it.
+    let todayStartedAt: Date?
 
     init(records: [SessionRecord], today: String) {
         let climb = Climb(records: records)
@@ -24,6 +26,10 @@ struct RewardsSnapshot: Equatable, Sendable {
         self.climb = climb
         self.pantry = pantry
         stickers = StickerBook.earned(records: records, climb: climb, pantry: pantry)
+        todayStartedAt = records
+            .filter { $0.kind == .focus && $0.localDay == today }
+            .map(\.startedAt)
+            .min()
     }
 
     static let empty = RewardsSnapshot(records: [], today: "")

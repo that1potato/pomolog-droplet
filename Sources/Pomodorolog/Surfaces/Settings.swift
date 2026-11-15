@@ -11,18 +11,27 @@ import SwiftUI
 
 extension PomodorologDroplet: SettingsPagesProviding {
     static let historyPageID = "history"
+    static let stickerBookPageID = "stickers"
 
     public func makeSettingsPane(context: SettingsPaneContext) -> AnyView {
         AnyView(PomodoroSettings(droplet: self))
     }
 
     public func makeSettingsPage(id: String, context: SettingsPaneContext) -> AnyView? {
-        id == Self.historyPageID ? AnyView(HistoryPage(droplet: self)) : nil
+        switch id {
+        case Self.historyPageID: AnyView(HistoryPage(droplet: self))
+        case Self.stickerBookPageID: AnyView(StickerBookPage(droplet: self))
+        default: nil
+        }
     }
 
     public var settingsSearchEntries: [SettingsSearchEntry] {
         [
             SettingsSearchEntry(title: "Droppy's Pomodoro", keywords: ["pomodoro", "timer", "logging", "status"]),
+            SettingsSearchEntry(title: "Summit", keywords: ["climb", "mountain", "peak", "tomato", "jar", "break bonus"]),
+            SettingsSearchEntry(title: "How the climb works", keywords: ["rules", "metres", "meters", "minute", "break bonus", "tomato", "jar", "peaks"]),
+            SettingsSearchEntry(title: "Sticker book", keywords: ["stickers", "badges", "achievements"]),
+            SettingsSearchEntry(title: "Notch moments", keywords: ["notification", "hud", "summit", "sticker", "jar", "preview"]),
             SettingsSearchEntry(title: "History", keywords: ["log", "sessions", "streak", "export", "csv"]),
         ]
     }
@@ -54,6 +63,18 @@ private struct PomodoroSettings: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+            }
+
+            DropletSettingsSection {
+                settingsSectionHeader("Summit")
+            } content: {
+                SummitSettings(droplet: droplet)
+            }
+
+            DropletSettingsSection {
+                settingsSectionHeader("How the climb works")
+            } content: {
+                ClimbRulesSettings()
             }
 
             DropletSettingsSection {
@@ -110,14 +131,6 @@ private struct PomodoroSettings: View {
                     }
                 }
             }
-
-            // Stage 2 of the summit work: the numbers before the widget
-            // shows them. Removed once the widget and the log are in.
-            DropletSettingsSection {
-                settingsSectionHeader("Summit preview")
-            } content: {
-                SummitPreview(rewards: droplet.rewards)
-            }
         }
     }
 
@@ -137,56 +150,185 @@ private struct PomodoroSettings: View {
     }
 }
 
-/// The summit numbers for the log, as plain rows. Temporary.
-private struct SummitPreview: View {
-    let rewards: RewardsSnapshot
+/// The climb, the sticker book and the notch moments.
+private struct SummitSettings: View {
+    @ObservedObject var droplet: PomodorologDroplet
 
     var body: some View {
-        let position = rewards.climb.position
-        let today = rewards.todayClimb
-        let todayPantry = rewards.todayPantry
+        let rewards = droplet.rewards
         DropletSettingsCard {
             DropletControlRow(
                 title: "Climbing",
-                infoTip: "Focus climbs 10 m for every counted minute, and 20% further when it starts from a finished break."
+                infoTip: "The peak you're climbing now, and how far up it you are."
             ) {
-                DropletValuePill(text: Self.climbing(position))
+                DropletValuePill(text: Self.climbing(rewards.climb.position))
             }
-            DropletControlRow(title: "Summits") {
-                DropletValuePill(text: Self.summits(rewards.climb.summits))
-            }
-            DropletControlRow(title: "Today") {
-                DropletValuePill(text: "\(TimerFormat.count(todayPantry.tomatoes, "tomato", "tomatoes")) · \(TimerFormat.count(todayPantry.jars, "jar", "jars")) · \(Self.metres(today.metres)) m")
-            }
-            DropletControlRow(title: "All time") {
-                DropletValuePill(text: "\(TimerFormat.count(rewards.pantry.totalTomatoes, "tomato", "tomatoes")) · \(TimerFormat.count(rewards.pantry.totalJars, "jar", "jars")) · \(Self.metres(rewards.climb.total)) m")
-            }
-            DropletControlRow(title: "From a break") {
-                DropletValuePill(text: "\(TimerFormat.count(rewards.sessionsFromBreak, "session", "sessions")) · \(Self.metres(rewards.bonusMetres)) m extra")
-            }
-            DropletStackedRow(title: "Stickers, \(rewards.stickers.count) of \(Stickers.all.count)") {
-                Text(verbatim: rewards.stickers.isEmpty ? "None yet." : rewards.stickers.map(\.sticker.name).joined(separator: ", "))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            DropletSettingsPageLink(
+                "Sticker book",
+                subtitle: "\(rewards.stickers.count) of \(Stickers.all.count) found.",
+                page: PomodorologDroplet.stickerBookPageID,
+                icon: nil
+            )
+            DropletControlRow(
+                title: "Notch moments",
+                infoTip: "A filled jar, a summit and a new sticker show in the notch when the session that earned them is logged, once the shelf is closed."
+            ) {
+                Button("Preview") { droplet.previewMoments() }
+                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
             }
         }
     }
 
-    /// `Mont Blanc, 2,529 of 4,808 m`, with the ascent after the first.
+    /// `Mont Blanc · 52%`, with the ascent after the first time up.
     static func climbing(_ position: PeakPosition) -> String {
+        let percent = Int((position.fraction * 100).rounded(.down))
         let ascent = position.ascent > 1 ? ", ascent \(position.ascent)" : ""
-        return "\(position.peak.name), \(metres(position.metres)) of \(metres(position.peak.height)) m\(ascent)"
+        return "\(position.peak.name)\(ascent) · \(percent)%"
+    }
+}
+
+/// The rules of the climb, a row each: the number at a glance, the whole
+/// definition behind the row's (i).
+private struct ClimbRulesSettings: View {
+    var body: some View {
+        DropletSettingsCard {
+            DropletControlRow(title: "Focus", infoTip: ClimbGuide.focusTip) {
+                DropletValuePill(text: ClimbGuide.focusValue)
+            }
+            DropletControlRow(title: "Break bonus", infoTip: ClimbGuide.bonusTip) {
+                DropletValuePill(text: ClimbGuide.bonusValue)
+            }
+            DropletControlRow(title: "Tomato", infoTip: ClimbGuide.tomatoTip) {
+                DropletValuePill(text: ClimbGuide.tomatoValue)
+            }
+            DropletControlRow(title: "Jar", infoTip: ClimbGuide.jarTip) {
+                DropletValuePill(text: ClimbGuide.jarValue)
+            }
+            DropletControlRow(title: "Peaks", infoTip: ClimbGuide.peaksTip) {
+                DropletValuePill(text: ClimbGuide.peaksValue)
+            }
+        }
+    }
+}
+
+/// The climb's rules in words, built from the numbers the climb is worked out
+/// with, so the two can't drift apart.
+enum ClimbGuide {
+    private static var perMinute: Int { Int(ClimbRules.metresPerMinute) }
+    private static var bonusPercent: Int { Int((ClimbRules.breakBonus * 100).rounded()) }
+    /// A 25-minute focus, without and with the break bonus.
+    private static var example: Int { 25 * perMinute }
+    private static var boosted: Int { Int((Double(example) * (1 + ClimbRules.breakBonus)).rounded()) }
+
+    static var focusValue: String { "\(perMinute) m a minute" }
+    static var focusTip: String {
+        "Every minute of focus climbs \(perMinute) m, so a 25-minute focus climbs \(example) m. "
+            + "A countdown climbs up to the length you set; time past zero doesn't count. "
+            + "A stopwatch run climbs at most \(ClimbRules.stopwatchCapSeconds / 60) minutes. "
+            + "Breaks don't climb on their own."
     }
 
-    /// `2: Ben Nevis, Mount Fuji`, or `None yet`.
-    static func summits(_ summits: [Summit]) -> String {
-        guard !summits.isEmpty else { return "None yet" }
-        let names = summits.suffix(3).map(\.peak.name).joined(separator: ", ")
-        return "\(summits.count): \(summits.count > 3 ? "… " : "")\(names)"
+    static var bonusValue: String { "+\(bonusPercent)%" }
+    static var bonusTip: String {
+        "A focus that starts from a finished break climbs \(bonusPercent)% further: \(boosted) m instead of \(example). "
+            + "The break has to follow a focus, run to zero and end no more than "
+            + "\(ClimbRules.breakOvertimeAllowance / 60) minutes past it, and the next focus has to start within "
+            + "\(Int(ClimbRules.handoverSeconds / 60)) minutes, as pressing Next does. "
+            + "The bonus is for that one focus and never stacks."
     }
 
-    /// Whole metres climbed, grouped: `7,650`. Rounded down, as the widget does.
-    static func metres(_ value: Double) -> String {
-        Int(value.rounded(.down)).formatted()
+    static let tomatoValue = "A focus run to zero"
+    static let tomatoTip = "Each focus that runs to zero leaves a tomato on the trail. "
+        + "A focus stopped early, or a stopwatch run, still climbs but leaves no tomato."
+
+    static var jarValue: String { "\(Pantry.tomatoesPerJar) tomatoes" }
+    static var jarTip: String {
+        let n = Pantry.tomatoesPerJar
+        return "Every \(n)th tomato of a day fills a jar: the \(n)th, \(2 * n)th, \(3 * n)th and so on. "
+            + "Tomatoes don't carry over to the next day."
+    }
+
+    static var peaksValue: String { "\(Peaks.all[0].name) to \(Peaks.all[Peaks.all.count - 1].name)" }
+    static var peaksTip: String {
+        let earth = Peaks.all.dropLast().map { "\($0.name) \(SummitWidgetModel.metres($0.height)) m" }
+        let mars = Peaks.all[Peaks.all.count - 1]
+        return "\(NotchMoments.list(earth)), then \(mars.name) on Mars, \(SummitWidgetModel.metres(mars.height)) m. "
+            + "Each is climbed from its foot, and what's left over carries on to the next. "
+            + "After \(mars.name), the range starts again."
+    }
+}
+
+/// Every sticker: the ones found and when, then the rest as a question mark
+/// and a hint.
+private struct StickerBookPage: View {
+    @ObservedObject var droplet: PomodorologDroplet
+
+    private let columns = [GridItem(.adaptive(minimum: 78), spacing: DroppySpacing.xsm, alignment: .top)]
+
+    var body: some View {
+        let earned = droplet.rewards.stickers
+        let found = Set(earned.map(\.sticker.id))
+        let locked = Stickers.all.filter { !found.contains($0.id) }
+
+        DropletSettingsPage {
+            DropletSettingsSection {
+                settingsSectionHeader("Found, \(earned.count) of \(Stickers.all.count)")
+            } content: {
+                DropletSettingsCard {
+                    LazyVGrid(columns: columns, alignment: .center, spacing: DroppySpacing.mdl) {
+                        ForEach(earned, id: \.sticker.id) { item in
+                            StickerCell(sticker: item.sticker, foundOn: item.date)
+                        }
+                        ForEach(locked) { sticker in
+                            StickerCell(sticker: sticker, foundOn: nil)
+                        }
+                    }
+                    .padding(.vertical, DroppySpacing.mdl)
+                    .padding(.horizontal, DroppySpacing.smd)
+                }
+            }
+        }
+    }
+}
+
+/// One sticker in the book: its disc and name and when it was found, or a
+/// question mark and its hint until then. Hovering shows what earns it, in a
+/// popover like the one behind a row's (i).
+private struct StickerCell: View {
+    let sticker: Sticker
+    /// Nil while it hasn't been found.
+    let foundOn: Date?
+
+    @State private var showsRule = false
+
+    var body: some View {
+        let isFound = foundOn != nil
+        VStack(spacing: DroppySpacing.xsm) {
+            StickerDisc(sticker: isFound ? sticker : nil, size: 42, onShelf: false)
+            Text(verbatim: isFound ? sticker.name : sticker.hint)
+                .font(.system(size: 12, weight: isFound ? .medium : .regular))
+                .foregroundStyle(isFound ? .primary : .tertiary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if let foundOn {
+                Text(verbatim: foundOn.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .onHover { showsRule = $0 }
+        .popover(isPresented: $showsRule, arrowEdge: .top) {
+            Text(verbatim: sticker.rule)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 220, alignment: .leading)
+                .padding(DroppySpacing.md)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(sticker.rule)
     }
 }
 

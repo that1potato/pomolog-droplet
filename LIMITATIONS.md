@@ -158,6 +158,12 @@ Droppy 16.0.1 what a droplet may show while Droppy's own Pomodoro runs.
   proposed 369 × 93 standard and 1089 × 620 at most on the display it ran on.
 - **Feedback:** `host.feedback.play(.success)` needs no capability. Whether
   the cue was audible wasn't checked.
+- **A strip has about 44 points on each side of the camera housing.** The
+  harness draws a 340-point strip around a 208-point housing, and Droppy pads
+  each end by 22. So the jar strip shows the jar and the week's count, and
+  "Jar filled" and today's count only where they fit. One HUD request serves a
+  notch and an island alike, so the summit and sticker cards lay out to the
+  width they get: 344 points on a notch, 208 on an island.
 
 ## Waiting on a newer Droppy
 
