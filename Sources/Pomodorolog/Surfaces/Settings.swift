@@ -110,6 +110,14 @@ private struct PomodoroSettings: View {
                     }
                 }
             }
+
+            // Stage 2 of the summit work: the numbers before the widget
+            // shows them. Removed once the widget and the log are in.
+            DropletSettingsSection {
+                settingsSectionHeader("Summit preview")
+            } content: {
+                SummitPreview(rewards: droplet.rewards)
+            }
         }
     }
 
@@ -126,6 +134,59 @@ private struct PomodoroSettings: View {
     static func focusLine(count: Int, seconds: Int) -> String {
         let sessions = TimerFormat.count(count, "session", "sessions")
         return seconds > 0 ? "\(sessions) · \(TimerFormat.duration(seconds: seconds))" : sessions
+    }
+}
+
+/// The summit numbers for the log, as plain rows. Temporary.
+private struct SummitPreview: View {
+    let rewards: RewardsSnapshot
+
+    var body: some View {
+        let position = rewards.climb.position
+        let today = rewards.todayClimb
+        let todayPantry = rewards.todayPantry
+        DropletSettingsCard {
+            DropletControlRow(
+                title: "Climbing",
+                infoTip: "Focus climbs 10 m for every counted minute, and 20% further when it starts from a finished break."
+            ) {
+                DropletValuePill(text: Self.climbing(position))
+            }
+            DropletControlRow(title: "Summits") {
+                DropletValuePill(text: Self.summits(rewards.climb.summits))
+            }
+            DropletControlRow(title: "Today") {
+                DropletValuePill(text: "\(TimerFormat.count(todayPantry.tomatoes, "tomato", "tomatoes")) · \(TimerFormat.count(todayPantry.jars, "jar", "jars")) · \(Self.metres(today.metres)) m")
+            }
+            DropletControlRow(title: "All time") {
+                DropletValuePill(text: "\(TimerFormat.count(rewards.pantry.totalTomatoes, "tomato", "tomatoes")) · \(TimerFormat.count(rewards.pantry.totalJars, "jar", "jars")) · \(Self.metres(rewards.climb.total)) m")
+            }
+            DropletControlRow(title: "From a break") {
+                DropletValuePill(text: "\(TimerFormat.count(rewards.sessionsFromBreak, "session", "sessions")) · \(Self.metres(rewards.bonusMetres)) m extra")
+            }
+            DropletStackedRow(title: "Stickers, \(rewards.stickers.count) of \(Stickers.all.count)") {
+                Text(verbatim: rewards.stickers.isEmpty ? "None yet." : rewards.stickers.map(\.sticker.name).joined(separator: ", "))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// `Mont Blanc, 2,529 of 4,808 m`, with the ascent after the first.
+    static func climbing(_ position: PeakPosition) -> String {
+        let ascent = position.ascent > 1 ? ", ascent \(position.ascent)" : ""
+        return "\(position.peak.name), \(metres(position.metres)) of \(metres(position.peak.height)) m\(ascent)"
+    }
+
+    /// `2: Ben Nevis, Mount Fuji`, or `None yet`.
+    static func summits(_ summits: [Summit]) -> String {
+        guard !summits.isEmpty else { return "None yet" }
+        let names = summits.suffix(3).map(\.peak.name).joined(separator: ", ")
+        return "\(summits.count): \(summits.count > 3 ? "… " : "")\(names)"
+    }
+
+    /// Whole metres, grouped: `7,650`.
+    static func metres(_ value: Double) -> String {
+        Int(value.rounded()).formatted()
     }
 }
 

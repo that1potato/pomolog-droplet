@@ -59,6 +59,8 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     @Published private(set) var session: ActiveSession?
     /// What the stage 1 probe last tried, for its widget. Removed before release.
     @Published var probeStatus = "Not tried yet"
+    /// The climb, the pantry and the stickers, worked out from the log.
+    @Published private(set) var rewards = RewardsSnapshot.empty
 
     private let reader = BuiltInPomodoroReader()
     private var tracker: BuiltInSessionTracker?
@@ -79,6 +81,9 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         self.store = store
         store.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        store.$sessions
+            .sink { [weak self] sessions in self?.refreshRewards(with: sessions) }
             .store(in: &cancellables)
         clearReplicaPreferences()
 
@@ -112,6 +117,16 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     /// Today as a day key, in the Mac's current time zone.
     var today: String {
         LocalDay.key(for: Date(), utcOffsetSeconds: TimeZone.current.secondsFromGMT())
+    }
+
+    /// Works the rewards out again from the log. The harness has no Droppy
+    /// Pomodoro to log, so it shows the design's sample week instead.
+    private func refreshRewards(with sessions: [SessionRecord]) {
+        var records = sessions
+        if records.isEmpty, host?.environment.isHarness == true {
+            records = SampleLog.week(endingOn: today, utcOffsetSeconds: TimeZone.current.secondsFromGMT())
+        }
+        rewards = RewardsSnapshot(records: records, today: today)
     }
 
     // MARK: Commands
