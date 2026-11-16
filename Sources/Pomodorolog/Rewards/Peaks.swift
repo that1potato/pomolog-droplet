@@ -12,19 +12,21 @@ import Foundation
 
 struct Peak: Equatable, Sendable {
     let name: String
+    /// Where it stands, as the expedition log writes it.
+    let region: String
     /// Its height in metres, from foot to top.
     let height: Double
 }
 
 enum Peaks {
     static let all: [Peak] = [
-        Peak(name: "Ben Nevis", height: 1345),
-        Peak(name: "Mount Fuji", height: 3776),
-        Peak(name: "Mont Blanc", height: 4808),
-        Peak(name: "Kilimanjaro", height: 5895),
-        Peak(name: "Aconcagua", height: 6961),
-        Peak(name: "Everest", height: 8849),
-        Peak(name: "Olympus Mons", height: 21900),
+        Peak(name: "Ben Nevis", region: "Scotland", height: 1345),
+        Peak(name: "Mount Fuji", region: "Japan", height: 3776),
+        Peak(name: "Mont Blanc", region: "France and Italy", height: 4808),
+        Peak(name: "Kilimanjaro", region: "Tanzania", height: 5895),
+        Peak(name: "Aconcagua", region: "Argentina", height: 6961),
+        Peak(name: "Everest", region: "Nepal and China", height: 8849),
+        Peak(name: "Olympus Mons", region: "Mars", height: 21900),
     ]
 
     /// Metres from the foot of the first peak to the top of the last: 53,534.

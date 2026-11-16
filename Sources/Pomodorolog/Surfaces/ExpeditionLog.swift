@@ -3,8 +3,10 @@
 //  Pomodorolog
 //
 //  The expedition log: a takeover on the shelf, opened from the summit
-//  widget. The range of peaks to scale, today's climb split into focus and
-//  break bonus, the week's pantry, and the stickers found.
+//  widget, drawn as an open field journal. The left page is the route, a
+//  peak to a row, its icon inked in once climbed and filling as you climb
+//  it. The right page is today: the climb split into focus and break bonus,
+//  the week's pantry, and the stickers found.
 //
 
 import DroppyKit
@@ -22,8 +24,9 @@ extension PomodorologDroplet: ExpandedSurfaceProviding {
     static let expeditionLogID: ExpandedSurfaceID = "log"
 
     /// The content area. The host insets a takeover itself and adds its chrome
-    /// around this, so the view draws edge to edge.
-    static let expeditionLogSize = CGSize(width: 624, height: 384)
+    /// around this, so the view draws edge to edge. The header, the notebook
+    /// and the ribbon hanging below it.
+    static let expeditionLogSize = CGSize(width: 680, height: 418)
 
     public var expandedSurfaces: [ExpandedSurfaceDescriptor] {
         [
@@ -98,7 +101,47 @@ struct ExpeditionLogModel: Equatable {
         var shownLoose: Int { min(loose, 3 - shownJars) }
     }
 
+    /// A peak on the route page.
+    struct RouteRow: Equatable {
+        enum State: Equatable {
+            /// Reached on this ascent, when the session that crossed the top
+            /// ended.
+            case climbed(Date)
+            /// Being climbed: metres up it so far, and that as a fraction of
+            /// its height.
+            case current(metres: Double, fraction: Double)
+            /// Not reached yet on this ascent.
+            case ahead
+        }
+
+        let index: Int
+        let state: State
+
+        var peak: Peak { Peaks.all[index] }
+
+        /// `Scotland · 1,345 m`.
+        var detailText: String {
+            "\(peak.region) · \(SummitWidgetModel.metres(peak.height)) m"
+        }
+
+        /// What a screen reader says for the row.
+        var spokenText: String {
+            let title = "\(peak.name), \(SummitWidgetModel.metres(peak.height)) metres"
+            switch state {
+            case .climbed(let date):
+                return "\(title), climbed on \(date.formatted(.dateTime.day().month(.wide)))"
+            case .current(let metres, let fraction):
+                return "\(title), \(SummitWidgetModel.metres(metres)) climbed, \(Int((fraction * 100).rounded(.down))) percent"
+            case .ahead:
+                return "\(title), still ahead"
+            }
+        }
+    }
+
     let position: PeakPosition
+    let rows: [RouteRow]
+    /// Today's key, for the right page's heading.
+    let day: String
     /// Today's climb, with a running focus's share so far.
     let today: DayClimb
     let since: Date?
@@ -110,6 +153,8 @@ struct ExpeditionLogModel: Equatable {
 
     init(rewards: RewardsSnapshot, today: String, live: ClimbStep?, since: Date?) {
         position = Peaks.position(at: live?.after ?? rewards.climb.total)
+        rows = Self.rows(at: position, summits: rewards.climb.summits, now: live?.endedAt ?? .now)
+        self.day = today
         var day = rewards.climb.day(today)
         if let live, live.day == today {
             day.focusMetres += live.baseMetres
@@ -131,19 +176,36 @@ struct ExpeditionLogModel: Equatable {
         stickers = rewards.stickers
     }
 
-    /// `Peak 3 of 7`, and the ascent after the first time up.
-    var peakText: String {
-        let peak = "Peak \(position.index + 1) of \(Peaks.all.count)"
-        return position.ascent > 1 ? "\(peak), ascent \(position.ascent)" : peak
+    /// The route at `position`: the peaks before it on this ascent climbed and
+    /// dated by their summits, the one it is on being climbed, the rest
+    /// ahead. A top the running focus crossed has no summit logged yet, so it
+    /// takes `now`.
+    static func rows(at position: PeakPosition, summits: [Summit], now: Date) -> [RouteRow] {
+        Peaks.all.indices.map { index in
+            if index < position.index {
+                let summit = summits.last { $0.ascent == position.ascent && $0.peakIndex == index }
+                return RouteRow(index: index, state: .climbed(summit?.date ?? now))
+            }
+            if index == position.index {
+                return RouteRow(index: index, state: .current(metres: position.metres, fraction: position.fraction))
+            }
+            return RouteRow(index: index, state: .ahead)
+        }
     }
 
-    /// The line under the range, which draws only the six on Earth.
-    var finaleText: String {
-        let mars = Peaks.all[Peaks.all.count - 1]
-        if position.index == Peaks.all.count - 1 {
-            return "On \(mars.name), Mars: \(SummitWidgetModel.metres(position.metres)) of \(SummitWidgetModel.metres(mars.height)) m"
-        }
-        return "Then \(mars.name) on Mars, \((mars.height / 1000).formatted(.number.precision(.fractionLength(1)))) km"
+    /// `2 of 7 climbed`, with the ascent after the first time up.
+    var climbedText: String { Self.climbedText(at: position) }
+
+    static func climbedText(at position: PeakPosition) -> String {
+        let climbed = "\(position.index) of \(Peaks.all.count) climbed"
+        return position.ascent > 1 ? "Ascent \(position.ascent) · \(climbed)" : climbed
+    }
+
+    /// `Sunday, 15 November`, in the Mac's own date style. The key's noon UTC,
+    /// formatted in UTC, so no time zone can move it to another day.
+    var dateText: String {
+        guard let date = LocalDay.date(for: day) else { return "" }
+        return date.formatted(Date.FormatStyle(timeZone: .gmt).weekday(.wide).day().month(.wide))
     }
 
     /// `1,650 m`.
@@ -174,17 +236,59 @@ struct ExpeditionLogModel: Equatable {
     /// `Stickers found · 8 of 24`.
     var stickersText: String { "Stickers found · \(stickers.count) of \(Stickers.all.count)" }
 
-    /// The stickers drawn in the strip: the latest found, then a few still to
-    /// find, at most 16 discs in all.
-    var shownStickers: [EarnedSticker] { Array(stickers.suffix(16)) }
-    var shownLocked: Int { max(0, min(4, 16 - shownStickers.count, Stickers.all.count - stickers.count)) }
+    /// Stickers the page has room for.
+    static let stickerSlots = 8
+
+    /// The latest found, at most eight.
+    var shownStickers: [EarnedSticker] { Array(stickers.suffix(Self.stickerSlots)) }
+
+    /// Places for stickers still to find, in the room the found ones leave,
+    /// at most four.
+    var shownLocked: Int {
+        max(0, min(4, Self.stickerSlots - shownStickers.count, Stickers.all.count - stickers.count))
+    }
+
+    /// `+4`: the found stickers the page has no room for.
+    var moreStickersText: String? {
+        stickers.count > Self.stickerSlots ? "+\(stickers.count - Self.stickerSlots)" : nil
+    }
+}
+
+/// The journal's colours: paper, ink and binding. The shelf around it stays
+/// Droppy's black.
+enum JournalInk {
+    static let paper = Color(hex: "#F4EEE1")
+    static let rule = Color(hex: "#E3D9C5")
+    static let text = Color(hex: "#2E2A24")
+    static let secondary = Color(hex: "#6E665A")
+    static let tertiary = Color(hex: "#9C9383")
+    static let gutter = Color(hex: "#D8CCB4")
+    static let stitch = Color(hex: "#B5A586")
+    static let cover = Color(hex: "#8E2F27")
+    static let highlight = Color(hex: "#D6483A").opacity(0.12)
+    static let climbed = Color(hex: "#3F7A4C")
+    static let current = Color(hex: "#C2463A")
+    static let stickerRing = Color(hex: "#FFFDF8")
+}
+
+/// The journal's type and sizes. Its smallest type is 12pt, the size of the
+/// Focus and Break labels on Droppy's own Pomodoro, so nothing in it reads
+/// smaller than Droppy does; the rest is the approved design scaled to match.
+private enum Journal {
+    static let small: CGFloat = 12
+    static let name: CGFloat = 14.5
+    static let heading: CGFloat = 16
+    static let figure: CGFloat = 33
+    static let rowHeight: CGFloat = 44
+    static let icon = CGSize(width: 55, height: 33)
+    static let sticker: CGFloat = 25
 }
 
 private struct ExpeditionLogView: View {
     @ObservedObject var droplet: PomodorologDroplet
 
     var body: some View {
-        // Every so often, so a running focus moves the marker as on the widget.
+        // Every so often, so a running focus fills the icon as on the widget.
         TimelineView(.periodic(from: .now, by: 15)) { timeline in
             let model = ExpeditionLogModel(
                 rewards: droplet.rewards,
@@ -192,39 +296,25 @@ private struct ExpeditionLogView: View {
                 live: droplet.liveStep(at: timeline.date),
                 since: droplet.todayStartedAt
             )
-            VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-                header(model)
-                RangeProfileView(position: model.position)
-                Text(verbatim: model.finaleText)
-                    .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                HStack(alignment: .top, spacing: 28) {
-                    TodayClimbBlock(model: model)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    PantryWeekBlock(model: model)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.top, DroppySpacing.xs)
-                StickerStrip(model: model) { droplet.openStickerBook() }
-                    .padding(.top, DroppySpacing.sm)
+            VStack(alignment: .leading, spacing: DroppySpacing.smd) {
+                header
+                JournalNotebook(model: model)
+                    // Room for the ribbon to hang below the pages.
+                    .padding(.bottom, DroppySpacing.mdl)
             }
-            .font(.system(size: 12))
-            .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
-    private func header(_ model: ExpeditionLogModel) -> some View {
+    private var header: some View {
         HStack(spacing: DroppySpacing.xsm) {
             Image(systemName: "mountain.2.fill")
                 .font(.system(size: 12, weight: .medium))
             Text("Expedition log")
                 .font(.system(size: 12, weight: .semibold))
             Spacer(minLength: DroppySpacing.sm)
-            Text(verbatim: model.peakText)
-                .font(.system(size: 12, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+            Button("Sticker book") { droplet.openStickerBook() }
+                .buttonStyle(DroppyQuietButtonStyle(size: .small))
             Button {
                 droplet.closeExpeditionLog()
             } label: {
@@ -233,146 +323,290 @@ private struct ExpeditionLogView: View {
             .buttonStyle(DroppyCircleButtonStyle(size: 24))
             .accessibilityLabel("Close the expedition log")
         }
+        .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
         .frame(height: 24)
     }
 }
 
-/// The six peaks on Earth to scale, climbed ones flagged, the current one
-/// filled to where you are. Olympus Mons is too tall to draw beside them, so
-/// the line under the range names it.
-private struct RangeProfileView: View {
-    let position: PeakPosition
-
-    private static let size = CGSize(width: 624, height: 120)
-    private static let baseline: CGFloat = 100
-    /// Everest is 80 high; the rest to the same scale.
-    private static let everestHeight: CGFloat = 80
-    private static let centres: [CGFloat] = [50, 140, 235, 335, 435, 552]
-
-    private struct Outline {
-        let centre: CGFloat
-        let height: CGFloat
-        let half: CGFloat
-        let apex: CGPoint
-    }
-
-    private static func outline(_ index: Int) -> Outline {
-        let height = CGFloat(Peaks.all[index].height / Peaks.all[5].height) * everestHeight
-        return Outline(
-            centre: centres[index],
-            height: height,
-            half: 18 + height * 0.55,
-            apex: CGPoint(x: centres[index], y: baseline - height)
-        )
-    }
-
-    var body: some View {
-        Canvas { context, size in
-            let scale = min(size.width / Self.size.width, size.height / Self.size.height)
-            let dx = (size.width - Self.size.width * scale) / 2
-            func map(_ point: CGPoint) -> CGPoint { CGPoint(x: dx + point.x * scale, y: point.y * scale) }
-            func polygon(_ points: [CGPoint]) -> Path {
-                var path = Path()
-                path.addLines(points.map(map))
-                path.closeSubpath()
-                return path
-            }
-
-            var ground = Path()
-            ground.move(to: map(CGPoint(x: 0, y: Self.baseline)))
-            ground.addLine(to: map(CGPoint(x: Self.size.width, y: Self.baseline)))
-            context.stroke(ground, with: .color(.white.opacity(0.12)), lineWidth: 1)
-
-            let onMars = position.index == Peaks.all.count - 1
-            for index in 0..<6 {
-                let outline = Self.outline(index)
-                let left = CGPoint(x: outline.centre - outline.half, y: Self.baseline)
-                let right = CGPoint(x: outline.centre + outline.half, y: Self.baseline)
-                let climbed = index < position.index || onMars
-                let current = index == position.index
-                let fill = climbed ? "#3A3A3C" : current ? "#2C2C2E" : "#202022"
-                context.fill(polygon([left, outline.apex, right]), with: .color(Color(hex: fill)))
-
-                if current {
-                    let fraction = CGFloat(min(max(position.fraction, 0), 1))
-                    let level = Self.baseline - outline.height * fraction
-                    let inset = outline.half * fraction
-                    let climbedLeft = CGPoint(x: left.x + inset, y: level)
-                    let climbedRight = CGPoint(x: right.x - inset, y: level)
-                    context.fill(polygon([left, climbedLeft, climbedRight, right]), with: .color(Color(hex: "#4A4A4E")))
-                    let marker = map(climbedLeft)
-                    let radius = 4.4 * scale
-                    let disc = Path(ellipseIn: CGRect(x: marker.x - radius, y: marker.y - radius, width: radius * 2, height: radius * 2))
-                    context.fill(disc, with: .color(.white))
-                    context.stroke(disc, with: .color(SummitInk.tomato), lineWidth: 2.4 * scale)
-                } else if climbed {
-                    let top = outline.apex
-                    var pole = Path()
-                    pole.move(to: map(top))
-                    pole.addLine(to: map(CGPoint(x: top.x, y: top.y - 8.8)))
-                    context.stroke(pole, with: .color(SummitInk.pole), lineWidth: 1.3 * scale)
-                    context.fill(polygon([
-                        CGPoint(x: top.x, y: top.y - 8.8),
-                        CGPoint(x: top.x + 7, y: top.y - 6.8),
-                        CGPoint(x: top.x, y: top.y - 4.8),
-                    ]), with: .color(SummitInk.flag))
-                }
-
-                let name = index == 1 ? "Fuji" : Peaks.all[index].name
-                let label = Text(verbatim: name)
-                    .font(.system(size: 11 * scale, weight: current ? .semibold : .regular))
-                    .foregroundColor(current ? .white : .white.opacity(climbed ? 0.62 : 0.4))
-                context.draw(label, at: map(CGPoint(x: outline.centre, y: 112)), anchor: .center)
-            }
-        }
-        .aspectRatio(Self.size.width / Self.size.height, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement()
-        .accessibilityLabel(Self.spoken(position))
-    }
-
-    static func spoken(_ position: PeakPosition) -> String {
-        let percent = Int((position.fraction * 100).rounded(.down))
-        return "Peak \(position.index + 1) of \(Peaks.all.count): \(position.peak.name), \(percent) percent climbed"
-    }
-}
-
-private struct TodayClimbBlock: View {
+/// The open journal: a cloth cover, the route on the left page, today on the
+/// right, the gutter stitched between them and a ribbon hanging out.
+private struct JournalNotebook: View {
     let model: ExpeditionLogModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+        HStack(spacing: 0) {
+            RoutePage(model: model)
+                .background(PaperPage(shape: UnevenRoundedRectangle(
+                    topLeadingRadius: 8, bottomLeadingRadius: 8,
+                    bottomTrailingRadius: 2, topTrailingRadius: 2, style: .continuous
+                )))
+            Rectangle()
+                .fill(JournalInk.gutter)
+                .overlay {
+                    StitchLine()
+                        .stroke(JournalInk.stitch, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
+                .frame(width: 12)
+                .accessibilityHidden(true)
+            TodayPage(model: model)
+                .background(PaperPage(shape: UnevenRoundedRectangle(
+                    topLeadingRadius: 2, bottomLeadingRadius: 2,
+                    bottomTrailingRadius: 8, topTrailingRadius: 8, style: .continuous
+                )))
+        }
+        .padding(DroppySpacing.xsm)
+        .background(
+            RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                .fill(JournalInk.cover)
+        )
+        .overlay(alignment: .bottomLeading) {
+            RibbonShape()
+                .fill(SummitInk.tomato)
+                .frame(width: 11, height: 30)
+                .offset(x: 275, y: 13)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// The left page: every peak on the way, in order.
+private struct RoutePage: View {
+    let model: ExpeditionLogModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("The route")
+                    .font(.system(size: Journal.heading, design: .serif).italic())
+                Spacer(minLength: DroppySpacing.sm)
+                Text(verbatim: model.climbedText)
+                    .font(.system(size: Journal.small))
+                    .monospacedDigit()
+                    .foregroundStyle(JournalInk.secondary)
+            }
+            .frame(height: 24, alignment: .top)
+            ForEach(model.rows, id: \.index) { row in
+                RouteRowView(row: row, isLast: row.index == Peaks.all.count - 1)
+            }
+        }
+        .foregroundStyle(JournalInk.text)
+        .lineLimit(1)
+        .padding(.horizontal, DroppySpacing.lg)
+        .padding(.vertical, DroppySpacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct RouteRowView: View {
+    let row: ExpeditionLogModel.RouteRow
+    let isLast: Bool
+
+    private var isCurrent: Bool {
+        if case .current = row.state { true } else { false }
+    }
+
+    private var isAhead: Bool { row.state == .ahead }
+
+    private var iconStyle: PeakIcon.Style {
+        switch row.state {
+        case .climbed: .inked
+        case .current(_, let fraction): .climbing(fraction)
+        case .ahead: .pencil
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: DroppySpacing.md) {
+            PeakIcon(index: row.index, style: iconStyle)
+                .frame(width: Journal.icon.width, height: Journal.icon.height)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: row.peak.name)
+                    .font(.system(size: Journal.name, weight: .semibold, design: .serif))
+                    .foregroundStyle(isAhead ? JournalInk.secondary : JournalInk.text)
+                Text(verbatim: row.detailText)
+                    .font(.system(size: Journal.small))
+                    .foregroundStyle(isAhead ? JournalInk.tertiary : JournalInk.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            status
+        }
+        .frame(height: Journal.rowHeight)
+        .background {
+            // Past the row's edges, so the highlight takes no width from it.
+            if isCurrent {
+                RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous)
+                    .fill(JournalInk.highlight)
+                    .padding(.horizontal, -DroppySpacing.xsm)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            // The page's ruling, under every row but the last.
+            if !isLast && !isCurrent {
+                Rectangle().fill(JournalInk.rule).frame(height: 1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(row.spokenText)
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch row.state {
+        case .climbed(let date):
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                Text(verbatim: date.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.system(size: Journal.small))
+            }
+            .foregroundStyle(JournalInk.climbed)
+        case .current(let metres, let fraction):
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(verbatim: "\(SummitWidgetModel.metres(metres)) m")
+                    .font(.system(size: Journal.small, weight: .semibold))
+                Text(verbatim: "\(Int((fraction * 100).rounded(.down)))% up")
+                    .font(.system(size: Journal.small))
+            }
+            .monospacedDigit()
+            .foregroundStyle(JournalInk.current)
+        case .ahead:
+            EmptyView()
+        }
+    }
+}
+
+/// The right page: today's climb, the week's pantry and the stickers found.
+private struct TodayPage: View {
+    let model: ExpeditionLogModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: model.dateText)
+                .font(.system(size: Journal.heading, design: .serif).italic())
+                .frame(height: 24, alignment: .top)
+
             Text("Today's climb")
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                .foregroundStyle(JournalInk.secondary)
+                .padding(.top, DroppySpacing.sm)
             HStack(alignment: .firstTextBaseline, spacing: DroppySpacing.sm) {
                 Text(verbatim: model.todayText)
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: Journal.figure, weight: .bold, design: .serif))
                     .monospacedDigit()
+                    .tracking(-0.4)
                 if let since = model.sinceText {
                     Text(verbatim: since)
-                        .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                        .foregroundStyle(JournalInk.secondary)
                 }
             }
-            ClimbBar(focus: model.today.focusMetres, bonus: model.today.bonusMetres)
+            .padding(.top, 1)
+            ClimbBar(focus: model.today.focusMetres, bonus: model.today.bonusMetres, track: JournalInk.rule)
                 .frame(height: 8)
-            HStack(spacing: DroppySpacing.mdl) {
+                .padding(.top, DroppySpacing.xsm)
+            HStack(spacing: DroppySpacing.lg) {
                 key(SummitInk.tomato, model.focusText)
                 key(SummitInk.bonus, model.bonusText)
             }
+            .padding(.top, DroppySpacing.sm)
             Text(verbatim: model.fromBreakText)
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+                .foregroundStyle(JournalInk.tertiary)
+                .padding(.top, 5)
+
+            Text("Pantry this week")
+                .foregroundStyle(JournalInk.secondary)
+                .padding(.top, DroppySpacing.mdl)
+            WeekColumns(model: model)
+                .frame(height: 63)
+                .padding(.top, DroppySpacing.xs)
+            Text(verbatim: model.weekText)
+                .foregroundStyle(JournalInk.tertiary)
+                .padding(.top, DroppySpacing.xs)
+
+            Text(verbatim: model.stickersText)
+                .foregroundStyle(JournalInk.secondary)
+                .padding(.top, DroppySpacing.md)
+            StickerRow(model: model)
+                .padding(.top, DroppySpacing.sm)
         }
+        .font(.system(size: Journal.small))
+        .foregroundStyle(JournalInk.text)
         .lineLimit(1)
+        .padding(.horizontal, DroppySpacing.lg)
+        .padding(.vertical, DroppySpacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func key(_ color: Color, _ text: String) -> some View {
         HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(color)
-                .frame(width: 10, height: 4)
+                .frame(width: 11, height: 4)
             Text(verbatim: text)
                 .monospacedDigit()
         }
+    }
+}
+
+/// The week as columns of tomatoes, jars at the bottom.
+private struct WeekColumns: View {
+    let model: ExpeditionLogModel
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            ForEach(model.week, id: \.day) { day in
+                VStack(spacing: 2) {
+                    ForEach(0..<day.shownLoose, id: \.self) { _ in TomatoGlyph(size: 12) }
+                    ForEach(0..<day.shownJars, id: \.self) { _ in JarGlyph(size: 14) }
+                    Text(verbatim: day.letter)
+                        .font(.system(size: Journal.small, weight: day.isToday ? .bold : .regular))
+                        .foregroundStyle(day.isToday ? JournalInk.text : JournalInk.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(day.letter): \(TimerFormat.count(day.tomatoes, "tomato", "tomatoes"))")
+            }
+        }
+    }
+}
+
+/// The stickers found, stuck on the page, and places for ones still to find.
+private struct StickerRow: View {
+    let model: ExpeditionLogModel
+
+    var body: some View {
+        HStack(spacing: DroppySpacing.xs) {
+            ForEach(model.shownStickers, id: \.sticker.id) { earned in
+                StickerDisc(sticker: earned.sticker, size: Journal.sticker)
+                    .padding(2)
+                    .background(Circle().fill(JournalInk.stickerRing))
+                    .rotationEffect(.degrees(Self.tilt(earned.sticker.id)))
+                    .help(earned.sticker.name)
+            }
+            ForEach(0..<model.shownLocked, id: \.self) { _ in
+                ZStack {
+                    Circle()
+                        .strokeBorder(PeakPalette.journal.pencil, style: StrokeStyle(lineWidth: 1, dash: [2.5, 2.5]))
+                    Image(systemName: "questionmark")
+                        .font(.system(size: Journal.small, weight: .semibold))
+                        .foregroundStyle(PeakPalette.journal.pencil)
+                }
+                .frame(width: Journal.sticker, height: Journal.sticker)
+                .padding(2)
+                .accessibilityElement()
+                .accessibilityLabel("A sticker not found yet")
+            }
+            if let more = model.moreStickersText {
+                Text(verbatim: more)
+                    .foregroundStyle(JournalInk.tertiary)
+                    .padding(.leading, DroppySpacing.xs)
+            }
+        }
+        .frame(height: Journal.sticker + 4)
+    }
+
+    /// A small tilt of its own for each sticker, as if stuck on by hand.
+    static func tilt(_ id: String) -> Double {
+        let sum = id.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return Double(sum % 19) - 9
     }
 }
 
@@ -380,6 +614,7 @@ private struct TodayClimbBlock: View {
 private struct ClimbBar: View {
     let focus: Double
     let bonus: Double
+    var track: Color = .white.opacity(0.1)
 
     var body: some View {
         GeometryReader { proxy in
@@ -393,7 +628,7 @@ private struct ClimbBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .background(Color.white.opacity(0.1))
+            .background(track)
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .accessibilityElement()
@@ -401,61 +636,27 @@ private struct ClimbBar: View {
     }
 }
 
-private struct PantryWeekBlock: View {
-    let model: ExpeditionLogModel
-
-    /// Three glyphs and the day's letter, the tallest a column gets.
-    private static let weekHeight: CGFloat = 3 * 16 + 3 * 6 + 10
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.smd) {
-            Text("Pantry this week")
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-            HStack(alignment: .bottom, spacing: DroppySpacing.xs) {
-                ForEach(model.week, id: \.day) { day in
-                    VStack(spacing: DroppySpacing.xsm) {
-                        ForEach(0..<day.shownLoose, id: \.self) { _ in TomatoGlyph(size: 12) }
-                        ForEach(0..<day.shownJars, id: \.self) { _ in JarGlyph(size: 16) }
-                        Text(verbatim: day.letter)
-                            .font(.system(size: 10, weight: day.isToday ? .semibold : .regular))
-                            .foregroundStyle(day.isToday ? AdaptiveColors.notchSurfacePrimaryText : AdaptiveColors.notchSurfaceTertiaryText)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .bottom)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(day.letter): \(TimerFormat.count(day.tomatoes, "tomato", "tomatoes"))")
-                }
-            }
-            .frame(height: Self.weekHeight, alignment: .bottom)
-            Text(verbatim: model.weekText)
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                .lineLimit(1)
-        }
+/// The gutter's stitching, short of the page ends.
+private struct StitchLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY + 12))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY - 12))
+        return path
     }
 }
 
-/// The stickers found, as discs, and the way to the whole book.
-private struct StickerStrip: View {
-    let model: ExpeditionLogModel
-    let openBook: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.smd) {
-            Text(verbatim: model.stickersText)
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-            HStack(spacing: DroppySpacing.xsm) {
-                ForEach(model.shownStickers, id: \.sticker.id) { earned in
-                    StickerDisc(sticker: earned.sticker, size: 24)
-                        .help(earned.sticker.name)
-                }
-                ForEach(0..<model.shownLocked, id: \.self) { _ in
-                    StickerDisc(sticker: nil, size: 24)
-                }
-                Spacer(minLength: DroppySpacing.sm)
-                Button("Sticker book", action: openBook)
-                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
-            }
-            .frame(height: 24)
-        }
+/// The bookmark ribbon: a strip with a V cut into its end.
+private struct RibbonShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.78))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

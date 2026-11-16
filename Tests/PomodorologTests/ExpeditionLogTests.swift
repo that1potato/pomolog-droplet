@@ -12,8 +12,7 @@ import Testing
 
     @Test func theSampleWeekReadsAsTheDesignDoes() {
         let model = ExpeditionLogModel(rewards: rewards, today: "2026-11-15", live: nil, since: nil)
-        #expect(model.peakText == "Peak 3 of 7")
-        #expect(model.finaleText == "Then Olympus Mons on Mars, 21.9 km")
+        #expect(model.climbedText == "2 of 7 climbed")
         #expect(model.todayText == "\(1650.formatted()) m")
         #expect(model.focusText == "Focus \(1500.formatted()) m")
         #expect(model.bonusText == "Break bonus 150 m")
@@ -60,18 +59,63 @@ import Testing
         #expect(model.today.sessions == 7)
         #expect(model.today.metres > 1650)
         #expect(model.position.metres == 2649)
+        // The running focus fills Mont Blanc's icon further.
+        #expect(model.rows[2].state == .current(metres: 2649, fraction: model.position.fraction))
     }
 
-    @Test func theStripShowsTheLatestStickersAndAFewToFind() {
+    @Test func theRouteInksTheClimbedPeaksAndFillsTheCurrentOne() throws {
         let model = ExpeditionLogModel(rewards: rewards, today: "2026-11-15", live: nil, since: nil)
-        #expect(model.shownStickers.count == 12)
-        #expect(model.shownLocked == 4)
+        let summits = rewards.climb.summits
+        #expect(summits.count == 2)
+        #expect(model.rows.map(\.index) == Array(0..<7))
+        #expect(model.rows[0].state == .climbed(summits[0].date))
+        #expect(model.rows[1].state == .climbed(summits[1].date))
+        #expect(model.position.metres == 2529)
+        #expect(model.rows[2].state == .current(metres: 2529, fraction: model.position.fraction))
+        #expect(model.rows[3...].allSatisfy { $0.state == .ahead })
+        #expect(model.rows[0].detailText == "Scotland · \(1345.formatted()) m")
+        #expect(model.rows[6].detailText == "Mars · \(21900.formatted()) m")
+        #expect(model.rows[2].spokenText == "Mont Blanc, \(4808.formatted()) metres, \(2529.formatted()) climbed, 52 percent")
+        #expect(model.rows[3].spokenText == "Kilimanjaro, \(5895.formatted()) metres, still ahead")
+        let day = try #require(LocalDay.date(for: "2026-11-15"))
+        #expect(model.dateText == day.formatted(Date.FormatStyle(timeZone: .gmt).weekday(.wide).day().month(.wide)))
+        #expect(model.dateText.contains("15"))
+    }
+
+    @Test func aSecondAscentDatesOnlyItsOwnSummits() {
+        let first = Date(timeIntervalSince1970: 1_000)
+        let second = Date(timeIntervalSince1970: 2_000)
+        let summits = (0..<7).map { Summit(peakIndex: $0, ascent: 1, recordID: UUID(), date: first, sessions: 1, days: 1) }
+            + [Summit(peakIndex: 0, ascent: 2, recordID: UUID(), date: second, sessions: 1, days: 1)]
+        let position = PeakPosition(ascent: 2, index: 1, metres: 100)
+        let rows = ExpeditionLogModel.rows(at: position, summits: summits, now: .distantFuture)
+        #expect(rows[0].state == .climbed(second))
+        #expect(rows[1].state == .current(metres: 100, fraction: position.fraction))
+        #expect(rows[2...].allSatisfy { $0.state == .ahead })
+        #expect(ExpeditionLogModel.climbedText(at: position) == "Ascent 2 · 1 of 7 climbed")
+    }
+
+    @Test func aTopTheRunningFocusCrossedIsDatedNow() {
+        let now = Date(timeIntervalSince1970: 3_000)
+        let rows = ExpeditionLogModel.rows(at: PeakPosition(ascent: 1, index: 1, metres: 10), summits: [], now: now)
+        #expect(rows[0].state == .climbed(now))
+    }
+
+    @Test func theStickerRowShowsTheLatestEightAndCountsTheRest() {
+        let model = ExpeditionLogModel(rewards: rewards, today: "2026-11-15", live: nil, since: nil)
+        #expect(model.shownStickers.count == 8)
+        #expect(model.shownStickers.last == model.stickers.last)
+        #expect(model.shownLocked == 0)
+        #expect(model.moreStickersText == "+4")
         let empty = ExpeditionLogModel(rewards: RewardsSnapshot(records: [], today: "2026-11-15"), today: "2026-11-15", live: nil, since: nil)
         #expect(empty.shownStickers.isEmpty)
         #expect(empty.shownLocked == 4)
+        #expect(empty.moreStickersText == nil)
         #expect(empty.fromBreakText == "No focus yet today")
         #expect(empty.weekText == "No tomatoes yet this week")
-        #expect(empty.peakText == "Peak 1 of 7")
+        #expect(empty.climbedText == "0 of 7 climbed")
+        #expect(empty.rows[0].state == .current(metres: 0, fraction: 0))
+        #expect(empty.rows.dropFirst().allSatisfy { $0.state == .ahead })
     }
 }
 
