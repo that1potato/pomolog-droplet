@@ -76,6 +76,11 @@ import Testing
         #expect(model.percentText == "52%")
         #expect(model.todayTomatoes == 6)
         #expect(model.todayJars == 1)
+        #expect(model.climbedText == 2529.formatted())
+        #expect(model.ofText == "of \(4808.formatted()) m · 52% up")
+        // Six today: one jar and two loose.
+        #expect(model.todayGlyphs.jars == 1)
+        #expect(model.todayGlyphs.loose == 2)
         // 2,279 m to go at 275 m a session, the pace of the last ten.
         #expect(model.statusText == "Summit in about 8 sessions")
     }

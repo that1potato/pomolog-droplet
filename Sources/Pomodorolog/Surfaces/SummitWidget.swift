@@ -19,10 +19,12 @@ extension PomodorologDroplet: ShelfWidgetProviding {
                 id: Self.summitWidgetID,
                 title: "Summit",
                 systemImage: "mountain.2.fill",
+                // Scaled 12/11 from the first design, so the smallest type is
+                // 12pt, the size of Droppy's own Pomodoro labels.
                 layoutTraits: ShelfWidgetLayoutTraits(
-                    preferredSoloWidth: 440,
-                    preferredPairedWidth: 218,
-                    contentHeight: .fixed(212)
+                    preferredSoloWidth: 480,
+                    preferredPairedWidth: 238,
+                    contentHeight: .fixed(232)
                 ),
                 searchKeywords: ["pomodoro", "summit", "climb", "tomato", "focus", "pomolog"]
             )
@@ -80,6 +82,20 @@ struct SummitWidgetModel: Equatable {
         "\(Self.metres(scene.climbed)) of \(Self.metres(scene.peak.height)) m"
     }
 
+    /// `2,529`, the big number of the full widget.
+    var climbedText: String { Self.metres(scene.climbed) }
+
+    /// `of 4,808 m · 52% up`, under the big number.
+    var ofText: String {
+        "of \(Self.metres(scene.peak.height)) m · \(percentText) up"
+    }
+
+    /// Today's tomatoes as glyphs: a jar for every four, then the rest. At
+    /// most three of each, so a long day still fits the column.
+    var todayGlyphs: (jars: Int, loose: Int) {
+        (min(todayJars, 3), min(max(todayTomatoes - todayJars * Pantry.tomatoesPerJar, 0), 3))
+    }
+
     /// `53%`.
     var percentText: String {
         "\(Int((scene.fraction * 100).rounded(.down)))%"
@@ -122,12 +138,19 @@ private struct SummitWidget: View {
             )
             VStack(alignment: .leading, spacing: DroppySpacing.sm) {
                 header(model)
-                MountainSceneView(scene: model.scene, showsMarkers: !context.isCompact)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if context.isCompact {
+                    MountainSceneView(scene: model.scene, showsMarkers: false)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     compactFooter(model)
                 } else {
-                    footer(model)
+                    // The numbers on the left, the mountain on the right.
+                    HStack(alignment: .top, spacing: DroppySpacing.md) {
+                        statColumn(model)
+                            .frame(width: 175, alignment: .topLeading)
+                            .frame(maxHeight: .infinity, alignment: .topLeading)
+                        MountainSceneView(scene: model.scene, showsMarkers: true)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    }
                 }
             }
             .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
@@ -144,13 +167,6 @@ private struct SummitWidget: View {
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: DroppySpacing.sm)
-            if !context.isCompact {
-                Text(verbatim: model.altitudeText)
-                    .font(.system(size: 11, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-                    .lineLimit(1)
-            }
             Button {
                 droplet.openExpeditionLog()
             } label: {
@@ -161,34 +177,66 @@ private struct SummitWidget: View {
         }
     }
 
-    private func footer(_ model: SummitWidgetModel) -> some View {
-        HStack(spacing: DroppySpacing.md) {
-            HStack(spacing: DroppySpacing.xsm) {
-                TomatoGlyph()
-                Text(verbatim: "\(model.todayTomatoes) today")
+    /// The full widget's left column: how high you are, today's tomatoes, and
+    /// how far there is to go.
+    private func statColumn(_ model: SummitWidgetModel) -> some View {
+        VStack(alignment: .leading, spacing: DroppySpacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(verbatim: model.climbedText)
+                    .font(.system(size: 37, weight: .bold))
                     .monospacedDigit()
+                    .tracking(-0.65)
+                Text(verbatim: "m")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
             }
-            HStack(spacing: DroppySpacing.xsm) {
-                JarGlyph()
-                Text(verbatim: TimerFormat.count(model.todayJars, "jar", "jars"))
-                    .monospacedDigit()
-            }
-            Spacer(minLength: DroppySpacing.sm)
-            Text(verbatim: model.statusText)
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            Text(verbatim: model.ofText)
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
                 .lineLimit(1)
+            todayRow(model)
+                .padding(.top, DroppySpacing.sm)
+            Text(verbatim: model.statusText)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+                .lineLimit(2)
+                .padding(.top, DroppySpacing.smd)
         }
-        .font(.system(size: 11, weight: .medium))
+    }
+
+    @ViewBuilder
+    private func todayRow(_ model: SummitWidgetModel) -> some View {
+        let glyphs = model.todayGlyphs
+        if model.todayTomatoes == 0 {
+            Text("No tomatoes yet today")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+        } else {
+            HStack(alignment: .bottom, spacing: DroppySpacing.xsm) {
+                HStack(alignment: .bottom, spacing: 3) {
+                    ForEach(0..<glyphs.jars, id: \.self) { _ in JarGlyph(size: 14) }
+                    ForEach(0..<glyphs.loose, id: \.self) { _ in TomatoGlyph(size: 12) }
+                }
+                Text("today")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(TimerFormat.count(model.todayTomatoes, "tomato", "tomatoes")) and \(TimerFormat.count(model.todayJars, "jar", "jars")) today")
+        }
     }
 
     private func compactFooter(_ model: SummitWidgetModel) -> some View {
         VStack(alignment: .leading, spacing: DroppySpacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DroppySpacing.xsm) {
                 Text(verbatim: model.percentText)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .monospacedDigit()
                 Text(model.state == .notLogging ? "not logging" : "of the way up")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
             }
             HStack(spacing: DroppySpacing.xsm) {
@@ -200,14 +248,14 @@ private struct SummitWidget: View {
                 Text(verbatim: "\(model.todayJars)")
                     .monospacedDigit()
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
         }
     }
 }
 
 /// A tomato, for the footers.
 struct TomatoGlyph: View {
-    var size: CGFloat = 11
+    var size: CGFloat = 12
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -226,7 +274,7 @@ struct TomatoGlyph: View {
 
 /// A jar of four tomatoes, for the footers.
 struct JarGlyph: View {
-    var size: CGFloat = 11
+    var size: CGFloat = 12
 
     var body: some View {
         VStack(spacing: size * 0.06) {

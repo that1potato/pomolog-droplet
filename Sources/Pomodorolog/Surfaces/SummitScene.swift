@@ -211,7 +211,7 @@ struct MountainSceneView: View {
 
             if showsMarkers {
                 let height = Text(verbatim: "\(Int(scene.peak.height).formatted()) m")
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.5))
                 context.draw(height, at: CGPoint(x: top.x + 15 * scale, y: top.y - 8 * scale), anchor: .leading)
 
