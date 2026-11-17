@@ -41,8 +41,12 @@ extension PomodorologDroplet: ShelfWidgetProviding {
 struct SummitWidgetModel: Equatable {
     enum State: Equatable {
         case climbing
-        /// Nothing logged yet.
+        /// Picked, with nothing climbed yet.
         case empty
+        /// Nothing picked.
+        case noClimb
+        /// At the top, the next climb not picked yet.
+        case summited
         /// Droppy's Pomodoro can't be read, so nothing new is logged.
         case notLogging
     }
@@ -55,6 +59,10 @@ struct SummitWidgetModel: Equatable {
     /// minutes or more: a quick test or a session ended early doesn't set the
     /// pace. With none yet, a 25-minute focus started from a break.
     let sessionsToTop: Int
+    /// `Ben Nevis climbed on 18 Nov`: the latest top reached, or that none
+    /// has been. The empty view always has the line, so its words stay clear
+    /// of the gulls.
+    let lastSummitText: String
 
     init(rewards: RewardsSnapshot, today: String, live: ClimbStep?, logging: Bool) {
         scene = SummitScene(rewards: rewards, today: today, live: live)
@@ -68,12 +76,17 @@ struct SummitWidgetModel: Equatable {
         let pace = recent.isEmpty ? 300 : recent.reduce(0) { $0 + $1.metres } / Double(recent.count)
         let toGo = scene.peak.height - scene.climbed
         sessionsToTop = max(1, Int((toGo / max(pace, 1)).rounded()))
+        lastSummitText = rewards.climb.summits.last.map {
+            "\($0.peak.name) climbed on \($0.date.formatted(.dateTime.day().month(.abbreviated)))"
+        } ?? "No peaks climbed yet"
         if !logging {
             state = .notLogging
-        } else if rewards.climb.steps.isEmpty, live == nil {
-            state = .empty
         } else {
-            state = .climbing
+            switch scene.status {
+            case .noClimb: state = .noClimb
+            case .summited: state = .summited
+            case .climbing: state = scene.climbed == 0 ? .empty : .climbing
+            }
         }
     }
 
@@ -106,16 +119,29 @@ struct SummitWidgetModel: Equatable {
         switch state {
         case .notLogging:
             return "Not logging, see Settings"
+        case .noClimb, .summited:
+            return Self.pickHint
         case .empty:
             return "Start a focus to begin the climb"
         case .climbing:
+            // A focus still running can reach the top before it's logged.
+            if scene.fraction >= 1 { return "Summit reached" }
             return sessionsToTop == 1 ? "One more session to the top" : "Summit in about \(sessionsToTop) sessions"
         }
     }
 
-    /// `Mont Blanc`, and `Mont Blanc, ascent 2` after the first time up.
+    /// No climb under way, nothing picked yet or the latest top reached: the
+    /// widget shows its empty sky.
+    var showsEmptyView: Bool { scene.status != .climbing }
+
+    /// What the empty view says under its title.
+    var emptyHint: String { state == .notLogging ? "Not logging, see Settings" : Self.pickHint }
+
+    static let pickHint = "Pick a mountain in the expedition log when you're ready."
+
+    /// `Mont Blanc` while it's being climbed, otherwise the widget's own name.
     var peakTitle: String {
-        scene.ascent > 1 ? "\(scene.peak.name), ascent \(scene.ascent)" : scene.peak.name
+        scene.status == .climbing ? scene.peak.name : "Summit"
     }
 
     static func metres(_ value: Double) -> String {
@@ -142,7 +168,10 @@ private struct SummitWidget: View {
             // which Droppy's card corner clips, with the numbers in its sky.
             VStack(alignment: .leading, spacing: 0) {
                 header(model)
-                if isCompact {
+                if model.showsEmptyView {
+                    emptyStats(model, isCompact: isCompact)
+                        .padding(.top, DroppySpacing.xs)
+                } else if isCompact {
                     compactStats(model)
                         .padding(.top, DroppySpacing.xs)
                 } else {
@@ -154,8 +183,14 @@ private struct SummitWidget: View {
             .padding(DroppySpacing.mdl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background {
-                MountainSceneView(scene: model.scene, isCompact: isCompact)
-                    .clipShape(RoundedRectangle(cornerRadius: artCornerRadius, style: .continuous))
+                Group {
+                    if model.showsEmptyView {
+                        EmptySkyView(isCompact: isCompact)
+                    } else {
+                        MountainSceneView(scene: model.scene, isCompact: isCompact)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: artCornerRadius, style: .continuous))
             }
         }
     }
@@ -234,6 +269,32 @@ private struct SummitWidget: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(TimerFormat.count(model.todayTomatoes, "tomato", "tomatoes")) and \(TimerFormat.count(model.todayJars, "jar", "jars")) today")
+        }
+    }
+
+    /// With no climb under way: what to do next, and no button for it; the
+    /// expedition log is the header's own button away.
+    private func emptyStats(_ model: SummitWidgetModel, isCompact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("No summit selected")
+                .font(.system(size: isCompact ? 22 : 28, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if !isCompact {
+                Text(verbatim: model.lastSummitText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+                    .lineLimit(1)
+                    .padding(.top, 2)
+                todayRow(model)
+                    .padding(.top, DroppySpacing.xsm)
+            }
+            Text(verbatim: model.emptyHint)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
+                .lineLimit(isCompact ? 3 : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, isCompact ? DroppySpacing.xsm : DroppySpacing.sm)
         }
     }
 

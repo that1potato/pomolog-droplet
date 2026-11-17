@@ -2,18 +2,20 @@
 //  SampleLog.swift
 //  Pomodorolog
 //
-//  The design's sample week, and the builder that writes sessions the way
-//  Droppy's Pomodoro would. The tests use both. The harness, which has no
-//  Droppy Pomodoro to log, shows the sample week. Foundation only.
+//  The design's sample week, the climbs picked along it, and the builder that
+//  writes sessions the way Droppy's Pomodoro would. The tests use them. The
+//  harness, which has no Droppy Pomodoro to log, shows the sample week.
+//  Foundation only.
 //
 
 import Foundation
 
 enum SampleLog {
     /// Six days ending on `lastDay`. In all: 27 tomatoes, 18 of them started
-    /// from a break, 5 jars and 7,650 m: Ben Nevis and Mount Fuji climbed and
-    /// 2,529 m up Mont Blanc. The last day has 6 tomatoes, 1 jar and 1,650 m,
-    /// 150 of them from breaks. Ending on a Sunday, it earns 12 stickers.
+    /// from a break, 5 jars and 7,650 m earned. With `picks(for:)` that climbs
+    /// Ben Nevis and Mount Fuji, whose tops drop 105 m and 224 m, and 2,200 m
+    /// of Mont Blanc. The last day has 6 tomatoes, 1 jar and 1,650 m, 150 of
+    /// them from breaks. Ending on a Sunday, it earns 14 stickers.
     static func week(endingOn lastDay: String, utcOffsetSeconds: Int = 0) -> [SessionRecord] {
         func daysBack(_ count: Int) -> String { LocalDay.offset(lastDay, by: -count) ?? lastDay }
 
@@ -55,6 +57,20 @@ enum SampleLog {
         log.rest(then: .stop)
 
         return log.records
+    }
+
+    /// The picks to go with a sample log: Ben Nevis from the first session,
+    /// then each next peak a minute after the last one's top, as someone
+    /// picking from the summit card would.
+    static func picks(for records: [SessionRecord]) -> [ClimbPick] {
+        guard let first = records.map(\.startedAt).min() else { return [] }
+        var picks = [ClimbPick(Peaks.all[0], at: first)]
+        for next in Peaks.all.indices.dropFirst() {
+            guard let summit = Climb(records: records, picks: picks).summits.last,
+                  summit.peakIndex == next - 1 else { break }
+            picks.append(ClimbPick(Peaks.all[next], at: summit.date.addingTimeInterval(60)))
+        }
+        return picks
     }
 }
 

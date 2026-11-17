@@ -159,9 +159,9 @@ private struct SummitSettings: View {
         DropletSettingsCard {
             DropletControlRow(
                 title: "Climbing",
-                infoTip: "The peak you're climbing now, and how far up it you are."
+                infoTip: "The peak you're climbing now, and how far up it you are. Pick a climb in the expedition log."
             ) {
-                DropletValuePill(text: Self.climbing(rewards.climb.position))
+                DropletValuePill(text: Self.climbing(rewards.climb))
             }
             DropletSettingsPageLink(
                 "Sticker book",
@@ -179,11 +179,12 @@ private struct SummitSettings: View {
         }
     }
 
-    /// `Mont Blanc · 52%`, with the ascent after the first time up.
-    static func climbing(_ position: PeakPosition) -> String {
-        let percent = Int((position.fraction * 100).rounded(.down))
-        let ascent = position.ascent > 1 ? ", ascent \(position.ascent)" : ""
-        return "\(position.peak.name)\(ascent) · \(percent)%"
+    /// `Mont Blanc · 52%`, `Mont Blanc · summit` once its top is reached, or
+    /// `No climb picked`.
+    static func climbing(_ climb: Climb) -> String {
+        guard let latest = climb.latest else { return "No climb picked" }
+        guard !latest.isSummited else { return "\(latest.peak.name) · summit" }
+        return "\(latest.peak.name) · \(Int((latest.fraction * 100).rounded(.down)))%"
     }
 }
 
@@ -248,31 +249,61 @@ enum ClimbGuide {
             + "Tomatoes don't carry over to the next day."
     }
 
-    static var peaksValue: String { "\(Peaks.all[0].name) to \(Peaks.all[Peaks.all.count - 1].name)" }
+    static var peaksValue: String { "\(Peaks.all.count) peaks, any order" }
     static var peaksTip: String {
-        let earth = Peaks.all.dropLast().map { "\($0.name) \(SummitWidgetModel.metres($0.height)) m" }
-        let mars = Peaks.all[Peaks.all.count - 1]
-        return "\(NotchMoments.list(earth)), then \(mars.name) on Mars, \(SummitWidgetModel.metres(mars.height)) m. "
-            + "Each is climbed from its foot, and what's left over carries on to the next. "
-            + "After \(mars.name), the range starts again."
+        let peaks = Peaks.all.map { peak in
+            let height = "\(peak.name) \(SummitWidgetModel.metres(peak.height)) m"
+            return peak.region == "Mars" ? "\(height) on Mars" : height
+        }
+        return "\(NotchMoments.list(peaks)). "
+            + "Pick one in the expedition log to start climbing it from its foot. Focus climbs only while a climb is picked. "
+            + "A climb ends at the top, and anything past it is dropped; then pick the next, or the same peak again. "
+            + "Switching to another peak part of the way up clears the climb you leave."
     }
 }
 
-/// Every sticker: the ones found and when, then the rest as a question mark
-/// and a hint.
+/// Every sticker. Each peak's sticker first, in a group of their own, since
+/// they count every time a top is reached; then the stickers earned once: the
+/// ones found and when, then the rest as a question mark and a hint.
 private struct StickerBookPage: View {
     @ObservedObject var droplet: PomodorologDroplet
 
     private let columns = [GridItem(.adaptive(minimum: 78), spacing: DroppySpacing.xsm, alignment: .top)]
 
     var body: some View {
-        let earned = droplet.rewards.stickers
+        let rewards = droplet.rewards
+        let held = Dictionary(rewards.stickers.map { ($0.sticker.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let summits = Stickers.all.filter { $0.peak != nil }
+        let earned = rewards.stickers.filter { $0.sticker.peak == nil }
         let found = Set(earned.map(\.sticker.id))
-        let locked = Stickers.all.filter { !found.contains($0.id) }
+        let onceOnly = Stickers.all.filter { $0.peak == nil }
+        let locked = onceOnly.filter { !found.contains($0.id) }
 
         DropletSettingsPage {
             DropletSettingsSection {
-                settingsSectionHeader("Found, \(earned.count) of \(Stickers.all.count)")
+                settingsSectionHeader("Summits, \(summits.filter { held[$0.id] != nil }.count) of \(summits.count)")
+            } content: {
+                DropletSettingsCard {
+                    VStack(alignment: .leading, spacing: DroppySpacing.md) {
+                        LazyVGrid(columns: columns, alignment: .center, spacing: DroppySpacing.mdl) {
+                            ForEach(summits) { sticker in
+                                SummitCell(
+                                    sticker: sticker,
+                                    count: held[sticker.id]?.count ?? 0,
+                                    latest: rewards.climb.summits.last { $0.peakIndex == sticker.peak }?.date
+                                )
+                            }
+                        }
+                        Text("Each top's sticker counts every time you reach it.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, DroppySpacing.mdl)
+                    .padding(.horizontal, DroppySpacing.smd)
+                }
+            }
+            DropletSettingsSection {
+                settingsSectionHeader("Stickers, \(earned.count) of \(onceOnly.count)")
             } content: {
                 DropletSettingsCard {
                     LazyVGrid(columns: columns, alignment: .center, spacing: DroppySpacing.mdl) {
@@ -313,7 +344,7 @@ private struct StickerCell: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let foundOn {
                 Text(verbatim: foundOn.formatted(.dateTime.day().month(.abbreviated)))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
         }
@@ -329,6 +360,64 @@ private struct StickerCell: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint(sticker.rule)
+    }
+}
+
+/// A peak's sticker in the book: its symbol, coloured once its top has been
+/// reached and greyed until then, with how many times and when last.
+private struct SummitCell: View {
+    let sticker: Sticker
+    /// How many times its top has been reached.
+    let count: Int
+    /// When last.
+    let latest: Date?
+
+    @State private var showsRule = false
+
+    var body: some View {
+        let isFound = count > 0
+        VStack(spacing: DroppySpacing.xsm) {
+            StickerDisc(sticker: isFound ? sticker : nil, size: 42, onShelf: false, lockedPeak: sticker.peak)
+                .overlay(alignment: .bottomTrailing) {
+                    if count > 1 {
+                        StickerCount(count: count, ring: nil)
+                            .offset(x: 9, y: 3)
+                    }
+                }
+            Text(verbatim: sticker.name)
+                .font(.system(size: 12, weight: isFound ? .medium : .regular))
+                .foregroundStyle(isFound ? .primary : .tertiary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if isFound, let latest {
+                Text(verbatim: latest.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .onHover { showsRule = $0 }
+        .popover(isPresented: $showsRule, arrowEdge: .top) {
+            Text(verbatim: ruleText)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 220, alignment: .leading)
+                .padding(DroppySpacing.md)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(ruleText)
+    }
+
+    /// `The top of Ben Nevis. Reached twice.`
+    private var ruleText: String {
+        switch count {
+        case 0: sticker.rule
+        case 1: "\(sticker.rule) Reached once."
+        case 2: "\(sticker.rule) Reached twice."
+        default: "\(sticker.rule) Reached \(count) times."
+        }
     }
 }
 

@@ -44,8 +44,6 @@ struct NotchCard: Equatable, Sendable {
     }
 
     enum Action: Equatable, Sendable {
-        /// Opens the shelf on the summit widget.
-        case seeTheClimb
         /// Opens the expedition log.
         case expeditionLog
     }
@@ -56,12 +54,13 @@ struct NotchCard: Equatable, Sendable {
     let title: String
     let detail: String
     let action: Action
+    /// A peak's own sticker: its tile draws the peak's symbol.
+    var peak: Int? = nil
 
     var hudID: String { "pomolog.\(kind.rawValue)" }
 
     var buttonTitle: String {
         switch action {
-        case .seeTheClimb: "See the climb"
         case .expeditionLog: "Expedition log"
         }
     }
@@ -101,22 +100,27 @@ enum NotchMoments {
         return moments
     }
 
-    /// `Summit: Mount Fuji`, `3,776 m in 14 sessions over 4 days. Next up:
-    /// Mont Blanc.`
+    /// `Summit: Mount Fuji`, `3,776 m in 14 sessions over 4 days. Pick your
+    /// next climb.`, on the peak's own sticker: two lines on an island's
+    /// card. A peak climbed again says how often.
     static func summitCard(_ summit: Summit) -> NotchCard {
-        let next = summit.peakIndex + 1 < Peaks.all.count
-            ? "Next up: \(Peaks.all[summit.peakIndex + 1].name)."
-            : "Next up: the range again, from \(Peaks.all[0].name)."
         let height = SummitWidgetModel.metres(summit.peak.height)
         let sessions = TimerFormat.count(summit.sessions, "session", "sessions")
         let days = TimerFormat.count(summit.days, "day", "days")
+        let again = switch summit.number {
+        case 1: ""
+        case 2: ", twice"
+        default: ", \(summit.number) times"
+        }
+        let sticker = Stickers.summit(of: summit.peakIndex)
         return NotchCard(
             kind: .summit,
             symbol: "flag.fill",
-            tileHex: "#64D2FF",
-            title: "Summit: \(summit.peak.name)",
-            detail: "\(height) m in \(sessions) over \(days). \(next)",
-            action: .seeTheClimb
+            tileHex: sticker?.colorHex ?? "#64D2FF",
+            title: "Summit: \(summit.peak.name)\(again)",
+            detail: "\(height) m in \(sessions) over \(days). Pick your next climb.",
+            action: .expeditionLog,
+            peak: summit.peakIndex
         )
     }
 
@@ -125,7 +129,7 @@ enum NotchMoments {
     /// one card. Nil for none.
     static func stickerCard(_ stickers: [EarnedSticker], rewards: RewardsSnapshot) -> NotchCard? {
         guard let first = stickers.first else { return nil }
-        let place = whereFound(first, climb: rewards.climb)
+        let place = whereFound(first, climb: rewards.climb).map { ", \($0)" } ?? ""
         let found = "\(rewards.stickers.count) of \(Stickers.all.count) found."
         if stickers.count == 1 {
             return NotchCard(
@@ -133,8 +137,9 @@ enum NotchMoments {
                 symbol: first.sticker.symbol,
                 tileHex: first.sticker.colorHex,
                 title: "Found on the way: \(first.sticker.name)",
-                detail: "\(withoutFullStop(first.sticker.rule)), \(place). \(found)",
-                action: .expeditionLog
+                detail: "\(withoutFullStop(first.sticker.rule))\(place). \(found)",
+                action: .expeditionLog,
+                peak: first.sticker.peak
             )
         }
         return NotchCard(
@@ -142,8 +147,9 @@ enum NotchMoments {
             symbol: first.sticker.symbol,
             tileHex: first.sticker.colorHex,
             title: "Found on the way: \(stickers.count) stickers",
-            detail: "\(list(stickers.map(\.sticker.name))), \(place). \(found)",
-            action: .expeditionLog
+            detail: "\(list(stickers.map(\.sticker.name)))\(place). \(found)",
+            action: .expeditionLog,
+            peak: first.sticker.peak
         )
     }
 
@@ -159,14 +165,16 @@ enum NotchMoments {
             tileHex: latest.sticker.colorHex,
             title: count == 1 ? "A sticker from your log so far" : "\(count) stickers from your log so far",
             detail: "Found in the sessions you'd already logged. \(left == 0 ? "That's all of them." : "\(left) more to find on the way up.")",
-            action: .expeditionLog
+            action: .expeditionLog,
+            peak: latest.sticker.peak
         )
     }
 
     /// The summit, a sticker and a jar with the sample week's numbers, for
     /// Settings' Preview and the harness.
     static func samples(today: String, utcOffsetSeconds: Int) -> [NotchMoment] {
-        let sample = RewardsSnapshot(records: SampleLog.week(endingOn: today, utcOffsetSeconds: utcOffsetSeconds), today: today)
+        let records = SampleLog.week(endingOn: today, utcOffsetSeconds: utcOffsetSeconds)
+        let sample = RewardsSnapshot(records: records, picks: SampleLog.picks(for: records), today: today)
         var moments: [NotchMoment] = []
         if let summit = sample.climb.summits.last {
             moments.append(.card(summitCard(summit)))
@@ -180,11 +188,11 @@ enum NotchMoments {
     }
 
     /// `at 1,129 m on Mont Blanc`: where the climb stood after the session
-    /// that earned it.
-    static func whereFound(_ earned: EarnedSticker, climb: Climb) -> String {
-        let altitude = climb.steps.first { $0.recordID == earned.recordID }?.after ?? climb.total
-        let position = Peaks.position(at: altitude)
-        return "at \(SummitWidgetModel.metres(position.metres)) m on \(position.peak.name)"
+    /// that earned it. Nil when it climbed nothing, with no climb picked.
+    static func whereFound(_ earned: EarnedSticker, climb: Climb) -> String? {
+        guard let step = climb.steps.first(where: { $0.recordID == earned.recordID }),
+              let peak = step.peakIndex else { return nil }
+        return "at \(SummitWidgetModel.metres(step.after)) m on \(Peaks.all[peak].name)"
     }
 
     /// `Early bird and Unbroken`, `Early bird, Unbroken and Named it`.
@@ -354,12 +362,8 @@ extension PomodorologDroplet {
         actionTask?.cancel()
         actionTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
-            guard !Task.isCancelled, let self, let host = self.host else { return }
+            guard !Task.isCancelled, let self else { return }
             switch card.action {
-            case .seeTheClimb:
-                if !host.shelf.open(revealing: Self.summitWidgetID) {
-                    self.diagnose("the shelf would not open on the summit widget")
-                }
             case .expeditionLog:
                 self.openExpeditionLog()
             }
@@ -405,9 +409,17 @@ private struct CardStrip: View {
 
     var body: some View {
         StripLayout(housing: housing) {
-            Image(systemName: card.symbol)
-                .font(.system(size: DroppyLiveActivityMetrics.iconSize, weight: .semibold))
-                .foregroundStyle(Color(hex: card.tileHex))
+            if let peak = card.peak {
+                // The peak's own symbol, in its sticker's colour.
+                // The symbol is wide and low in its disc: at twice the
+                // icon size it stands as tall as the label's capitals.
+                SummitGlyph(peak: peak, ink: Color(hex: card.tileHex))
+                    .frame(width: DroppyLiveActivityMetrics.iconSize * 2.2, height: DroppyLiveActivityMetrics.iconSize * 2.2)
+            } else {
+                Image(systemName: card.symbol)
+                    .font(.system(size: DroppyLiveActivityMetrics.iconSize, weight: .semibold))
+                    .foregroundStyle(Color(hex: card.tileHex))
+            }
         } trailing: {
             Text(verbatim: card.stripText)
                 .minimumScaleFactor(0.75)
@@ -484,9 +496,13 @@ struct MomentCard: View {
     private func tile(_ size: CGFloat) -> some View {
         ZStack {
             Circle().fill(Color(hex: card.tileHex))
-            Image(systemName: card.symbol)
-                .font(.system(size: size * 0.5, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.78))
+            if let peak = card.peak {
+                SummitGlyph(peak: peak)
+            } else {
+                Image(systemName: card.symbol)
+                    .font(.system(size: size * 0.5, weight: .semibold))
+                    .foregroundStyle(Color.black.opacity(0.78))
+            }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

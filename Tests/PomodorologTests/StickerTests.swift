@@ -4,9 +4,9 @@ import Testing
 
 @MainActor
 @Suite struct StickerTests {
-    /// The stickers a log earns, by id.
-    private func earned(_ records: [SessionRecord]) -> [String: EarnedSticker] {
-        let rewards = RewardsSnapshot(records: records, today: "2026-11-15")
+    /// The stickers a log earns with these picks, by id.
+    private func earned(_ records: [SessionRecord], picks: [ClimbPick] = []) -> [String: EarnedSticker] {
+        let rewards = RewardsSnapshot(records: records, picks: picks, today: "2026-11-15")
         return Dictionary(rewards.stickers.map { ($0.sticker.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
@@ -27,9 +27,36 @@ import Testing
         records.filter(\.countsAsCompletedFocus)
     }
 
-    @Test func theCatalogHasTwentyFourStickersWithUniqueIDs() {
-        #expect(Stickers.all.count == 24)
-        #expect(Set(Stickers.all.map(\.id)).count == 24)
+    @Test func theCatalogHasThirtyStickersWithUniqueIDs() {
+        #expect(Stickers.all.count == 30)
+        #expect(Set(Stickers.all.map(\.id)).count == 30)
+    }
+
+    @Test func everyPeakHasASummitStickerOfItsOwn() {
+        let summitStickers = Peaks.all.indices.compactMap { Stickers.summit(of: $0) }
+        #expect(summitStickers.count == Peaks.all.count)
+        #expect(Set(summitStickers.map(\.id)).count == Peaks.all.count)
+        #expect(Stickers.summit(of: 6) == Stickers.redPlanet)
+        #expect(Stickers.redPlanet.name == "Olympus Mons")
+        #expect(Peaks.all.indices.allSatisfy { Stickers.summit(of: $0)?.peak == $0 })
+        #expect(Stickers.all.filter { $0.peak != nil }.count == Peaks.all.count)
+    }
+
+    @Test func everySummitSymbolStandsOnTheGroundInsideItsDisc() {
+        #expect(SummitGlyphShapes.all.count == Peaks.all.count)
+        for shapes in SummitGlyphShapes.all {
+            let body = shapes.body.boundingRect
+            #expect(body.minX >= 0 && body.maxX <= 100 && body.minY >= 20)
+            #expect(abs(body.maxY - 70) < 0.01)
+            if let front = shapes.front {
+                #expect(abs(front.boundingRect.maxY - 70) < 0.01)
+            }
+            if let snow = shapes.snow {
+                #expect(body.contains(snow.boundingRect))
+            }
+        }
+        // Mars's two moons, and nothing else has any.
+        #expect(SummitGlyphShapes.all.map(\.moons.count) == [0, 0, 0, 0, 0, 0, 2])
     }
 
     @Test func nothingLoggedEarnsNothing() {
@@ -204,19 +231,50 @@ import Testing
         #expect(earned(skipped.records)["well-rested"] == nil)
     }
 
-    @Test func baseCampThinAirAndRedPlanetComeFromTheClimb() {
-        // One-hour stopwatch runs of 600 m each, which leave no tomatoes.
+    /// One-hour stopwatch runs of 600 m each, which leave no tomatoes.
+    private func hourlyRuns(_ count: Int) -> SessionLogBuilder {
         var log = SessionLogBuilder(day: "2026-11-01", at: 0)
-        for _ in 0..<92 {
+        for _ in 0..<count {
             log.focus(60, stopwatch: true, then: .stop)
             log.wait(minutes: 10)
         }
-        let stickers = earned(log.records)
-        // Ben Nevis is 1,345 m: the third run. 8,000 m up Everest is 30,785 m
-        // in all: the 52nd. Olympus Mons tops the range at 53,534 m: the 90th.
-        #expect(stickers["base-camp"]?.recordID == log.records[2].id)
-        #expect(stickers["thin-air"]?.recordID == log.records[51].id)
-        #expect(stickers["red-planet"]?.recordID == log.records[89].id)
+        return log
+    }
+
+    @Test func baseCampThinAirAndRedPlanetComeFromTheClimb() {
+        // Everest first: 8,000 m is the 14th run and its top the 15th. Then
+        // Olympus Mons, picked a minute later: 21,900 m is 37 runs more.
+        let log = hourlyRuns(60)
+        let picks = [
+            ClimbPick(Peaks.all[5], at: log.records[0].startedAt),
+            ClimbPick(Peaks.all[6], at: log.records[14].endedAt.addingTimeInterval(60)),
+        ]
+        let stickers = earned(log.records, picks: picks)
+        #expect(stickers["thin-air"]?.recordID == log.records[13].id)
+        #expect(stickers["base-camp"]?.recordID == log.records[14].id)
+        #expect(stickers["summit-everest"]?.recordID == log.records[14].id)
+        #expect(stickers["red-planet"]?.recordID == log.records[51].id)
+        #expect(stickers["summit-ben-nevis"] == nil)
         #expect(stickers["first-tomato"] == nil)
+    }
+
+    @Test func aPeaksStickerCountsEveryTimeItsTopIsReached() {
+        // Ben Nevis takes three runs; picked again after its top, it takes three more.
+        let log = hourlyRuns(6)
+        let picks = [
+            ClimbPick(Peaks.all[0], at: log.records[0].startedAt),
+            ClimbPick(Peaks.all[0], at: log.records[2].endedAt.addingTimeInterval(60)),
+        ]
+        let sticker = earned(log.records, picks: picks)["summit-ben-nevis"]
+        #expect(sticker?.count == 2)
+        #expect(sticker?.recordID == log.records[2].id)
+        #expect(earned(log.records, picks: picks)["base-camp"]?.count == 1)
+    }
+
+    @Test func nothingPickedEarnsNoClimbingStickers() {
+        let stickers = earned(hourlyRuns(30).records)
+        #expect(stickers.values.allSatisfy { $0.sticker.peak == nil })
+        #expect(stickers["base-camp"] == nil)
+        #expect(stickers["thin-air"] == nil)
     }
 }

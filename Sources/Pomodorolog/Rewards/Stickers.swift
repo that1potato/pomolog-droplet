@@ -2,10 +2,11 @@
 //  Stickers.swift
 //  Pomodorolog
 //
-//  Twenty-four stickers, each earned by something in the log. A sticker is
-//  dated by the session that first met its rule, so the log's past earns them
-//  too. Locked ones show a hint instead of their name. Times are the session's
-//  own local time. Foundation only.
+//  Thirty stickers, each earned by something in the log. A sticker is dated
+//  by the session that first met its rule, so the log's past earns them too.
+//  Each peak has a sticker of its own, earned at its top, which counts every
+//  time you reach it. Locked ones show a hint instead of their name. Times are
+//  the session's own local time. Foundation only.
 //
 
 import Foundation
@@ -20,13 +21,19 @@ struct Sticker: Equatable, Sendable, Identifiable {
     let rule: String
     /// What a locked sticker shows instead of its name.
     let hint: String
+    /// A peak's own sticker, earned at its top: the peak's index in
+    /// `Peaks.all`.
+    var peak: Int? = nil
 }
 
 struct EarnedSticker: Equatable, Sendable {
     let sticker: Sticker
-    /// The session that earned it, and when it ended.
+    /// The session that first earned it, and when it ended.
     let recordID: UUID
     let date: Date
+    /// How many times it's been earned: a peak's sticker counts its summits,
+    /// and every other sticker is earned once.
+    var count = 1
 }
 
 enum Stickers {
@@ -52,15 +59,27 @@ enum Stickers {
     static let firstJar = Sticker(id: "first-jar", name: "First jar", symbol: "archivebox.fill", colorHex: "#FF6B5E", rule: "Your first jar.", hint: "Four of a kind")
     static let pantry = Sticker(id: "pantry", name: "Pantry", symbol: "shippingbox.fill", colorHex: "#FF9F0A", rule: "25 jars.", hint: "A full pantry")
     static let baseCamp = Sticker(id: "base-camp", name: "Base camp", symbol: "flag.fill", colorHex: "#64D2FF", rule: "Your first summit.", hint: "The first top")
+    static let benNevis = Sticker(id: "summit-ben-nevis", name: "Ben Nevis", symbol: "mountain.2.fill", colorHex: "#30D158", rule: "The top of Ben Nevis.", hint: "Scotland's highest", peak: 0)
+    static let mountFuji = Sticker(id: "summit-mount-fuji", name: "Mount Fuji", symbol: "mountain.2.fill", colorHex: "#FF7AA2", rule: "The top of Mount Fuji.", hint: "Japan's highest", peak: 1)
+    static let montBlanc = Sticker(id: "summit-mont-blanc", name: "Mont Blanc", symbol: "mountain.2.fill", colorHex: "#64D2FF", rule: "The top of Mont Blanc.", hint: "The Alps' highest", peak: 2)
+    static let kilimanjaro = Sticker(id: "summit-kilimanjaro", name: "Kilimanjaro", symbol: "mountain.2.fill", colorHex: "#FF9F0A", rule: "The top of Kilimanjaro.", hint: "Africa's highest", peak: 3)
+    static let aconcagua = Sticker(id: "summit-aconcagua", name: "Aconcagua", symbol: "mountain.2.fill", colorHex: "#BF5AF2", rule: "The top of Aconcagua.", hint: "The Americas' highest", peak: 4)
+    static let everest = Sticker(id: "summit-everest", name: "Everest", symbol: "mountain.2.fill", colorHex: "#409CFF", rule: "The top of Everest.", hint: "The world's highest", peak: 5)
     static let thinAir = Sticker(id: "thin-air", name: "Thin air", symbol: "mountain.2.fill", colorHex: "#E5E5EA", rule: "8,000 m up Everest.", hint: "Very high up")
-    static let redPlanet = Sticker(id: "red-planet", name: "Red planet", symbol: "sparkles", colorHex: "#FF453A", rule: "The top of Olympus Mons.", hint: "Another planet")
+    static let redPlanet = Sticker(id: "red-planet", name: "Olympus Mons", symbol: "sparkles", colorHex: "#FF453A", rule: "The top of Olympus Mons.", hint: "Another planet", peak: 6)
 
     /// In the order the sticker book shows them.
     static let all: [Sticker] = [
         firstTomato, century, earlyBird, nightOwl, hatTrick, dozen, marathon, weekendWarrior,
         perfectWeek, clockwork, comeback, weekStreak, monthStreak, unbroken, extraMile, longHaul,
-        namedIt, freshLegs, wellRested, firstJar, pantry, baseCamp, thinAir, redPlanet,
+        namedIt, freshLegs, wellRested, firstJar, pantry, baseCamp,
+        benNevis, mountFuji, montBlanc, kilimanjaro, aconcagua, everest, thinAir, redPlanet,
     ]
+
+    /// The sticker a peak's summit earns.
+    static func summit(of peakIndex: Int) -> Sticker? {
+        all.first { $0.peak == peakIndex }
+    }
 }
 
 /// Works out which stickers a log has earned, and when.
@@ -79,11 +98,14 @@ enum StickerBook {
             (Stickers.namedIt, namedIt), (Stickers.freshLegs, freshLegs),
             (Stickers.wellRested, wellRested), (Stickers.firstJar, firstJar),
             (Stickers.pantry, pantryOfJars), (Stickers.baseCamp, baseCamp),
-            (Stickers.thinAir, thinAir), (Stickers.redPlanet, redPlanet),
-        ]
-        let earned = rules.enumerated().compactMap { order, rule -> (Int, EarnedSticker)? in
+            (Stickers.thinAir, thinAir),
+        ] + Stickers.all.compactMap { sticker in
+            sticker.peak.map { peak in (sticker, { summitOf(peak, $0) }) }
+        }
+        let earned = rules.compactMap { rule -> (Int, EarnedSticker)? in
             guard let earn = rule.1(context) else { return nil }
-            return (order, EarnedSticker(sticker: rule.0, recordID: earn.recordID, date: earn.date))
+            let order = Stickers.all.firstIndex { $0.id == rule.0.id } ?? Stickers.all.count
+            return (order, EarnedSticker(sticker: rule.0, recordID: earn.recordID, date: earn.date, count: earn.count))
         }
         // Oldest first; two earned by one session keep the book's order.
         return earned
@@ -96,6 +118,7 @@ enum StickerBook {
     struct Earn {
         let recordID: UUID
         let date: Date
+        var count = 1
     }
 
     struct Context {
@@ -316,14 +339,18 @@ enum StickerBook {
         c.climb.summits.first.map { Earn(recordID: $0.recordID, date: $0.date) }
     }
 
-    /// 8,000 m up Everest, the first time up the range.
+    /// 8,000 m up a climb of Everest.
     private static func thinAir(_ c: Context) -> Earn? {
-        let everest = Peaks.all.firstIndex { $0.name == "Everest" } ?? 5
-        let mark = Peaks.foot(ofPeak: everest, ascent: 1) + 8000
-        return c.climb.steps.first { $0.after >= mark }.map { Earn(recordID: $0.recordID, date: $0.endedAt) }
+        guard let everest = Peaks.index(of: "everest") else { return nil }
+        return c.climb.steps
+            .first { $0.peakIndex == everest && $0.after >= 8000 }
+            .map { Earn(recordID: $0.recordID, date: $0.endedAt) }
     }
 
-    private static func redPlanet(_ c: Context) -> Earn? {
-        c.climb.summits.first { $0.peakIndex == Peaks.all.count - 1 }.map { Earn(recordID: $0.recordID, date: $0.date) }
+    /// A peak's own sticker: its first summit, counting every one since.
+    private static func summitOf(_ peak: Int, _ c: Context) -> Earn? {
+        let summits = c.climb.summits.filter { $0.peakIndex == peak }
+        guard let first = summits.first else { return nil }
+        return Earn(recordID: first.recordID, date: first.date, count: summits.count)
     }
 }

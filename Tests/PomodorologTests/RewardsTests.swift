@@ -6,8 +6,10 @@ import Testing
 @Suite struct RewardsTests {
     let records = SampleLog.week(endingOn: "2026-11-15")
 
+    private var picks: [ClimbPick] { SampleLog.picks(for: records) }
+
     private var rewards: RewardsSnapshot {
-        RewardsSnapshot(records: records, today: "2026-11-15")
+        RewardsSnapshot(records: records, picks: picks, today: "2026-11-15")
     }
 
     /// The `number`th focus on `day`.
@@ -19,39 +21,44 @@ import Testing
     private func around(_ record: SessionRecord, today: String) throws -> (RewardsSnapshot, RewardsSnapshot) {
         let index = try #require(records.firstIndex { $0.id == record.id })
         return (
-            RewardsSnapshot(records: Array(records[..<index]), today: today),
-            RewardsSnapshot(records: Array(records[...index]), today: today)
+            RewardsSnapshot(records: Array(records[..<index]), picks: picks, today: today),
+            RewardsSnapshot(records: Array(records[...index]), picks: picks, today: today)
         )
     }
 
     @Test func theSampleWeekClimbsAsTheDesignSays() {
         let rewards = rewards
-        #expect(rewards.climb.total == 7650)
+        // 7,650 m earned; the tops of Ben Nevis and Mount Fuji drop 105 m and 224 m.
+        #expect(rewards.climb.steps.reduce(0) { $0 + $1.metres } == 7650)
+        #expect(rewards.climb.steps.reduce(0) { $0 + $1.climbed } == 7321)
         #expect(rewards.pantry.totalTomatoes == 27)
         #expect(rewards.pantry.totalJars == 5)
         #expect(rewards.sessionsFromBreak == 18)
         #expect(rewards.bonusMetres == 900)
-        #expect(rewards.climb.position.peak.name == "Mont Blanc")
-        #expect(rewards.climb.position.metres == 2529)
+        #expect(rewards.climb.current?.peak.name == "Mont Blanc")
+        #expect(rewards.climb.current?.metres == 2200)
         #expect(rewards.todayClimb == DayClimb(focusMetres: 1500, bonusMetres: 150, sessions: 6, startedFromBreak: 3))
         #expect(rewards.todayPantry.tomatoes == 6)
         #expect(rewards.todayPantry.jars == 1)
         #expect(rewards.pantry.jars(inWeekOf: "2026-11-15") == 5)
     }
 
-    @Test func theSampleWeekReachesTwoTops() {
+    @Test func theSampleWeekPicksThreeClimbsAndReachesTwoTops() {
+        #expect(picks.map(\.peak) == ["ben-nevis", "mount-fuji", "mont-blanc"])
         let summits = rewards.climb.summits
         #expect(summits.map(\.peak.name) == ["Ben Nevis", "Mount Fuji"])
+        #expect(summits.map(\.number) == [1, 1])
         #expect(summits.first?.recordID == focus("2026-11-10", 5).id)
-        #expect(summits.last?.recordID == focus("2026-11-13", 1).id)
+        #expect(summits.last?.recordID == focus("2026-11-13", 2).id)
         #expect(summits.last?.sessions == 14)
-        #expect(summits.last?.days == 4)
+        #expect(summits.last?.days == 3)
     }
 
-    @Test func theSampleWeekEarnsTwelveStickers() {
+    @Test func theSampleWeekEarnsFourteenStickers() {
         #expect(Set(rewards.stickers.map(\.sticker.id)) == [
             "first-tomato", "unbroken", "hat-trick", "well-rested", "first-jar", "base-camp",
-            "named-it", "fresh-legs", "clockwork", "extra-mile", "early-bird", "weekend-warrior",
+            "summit-ben-nevis", "named-it", "fresh-legs", "clockwork", "extra-mile",
+            "summit-mount-fuji", "early-bird", "weekend-warrior",
         ])
         let dates = rewards.stickers.map(\.date)
         #expect(dates == dates.sorted())
@@ -65,7 +72,7 @@ import Testing
     }
 
     @Test func reachingATopIsAnEvent() throws {
-        let (before, after) = try around(focus("2026-11-13", 1), today: "2026-11-13")
+        let (before, after) = try around(focus("2026-11-13", 2), today: "2026-11-13")
         let events = RewardEvents.between(old: before, new: after)
         #expect(events.count == 1)
         guard case .summit(let summit) = events.first else {
@@ -82,6 +89,22 @@ import Testing
             return nil
         }
         #expect(ids == ["early-bird", "weekend-warrior"])
+    }
+
+    @Test func aPeaksOwnStickerComesWithItsSummitNotAsAnEvent() throws {
+        let (before, after) = try around(focus("2026-11-10", 5), today: "2026-11-10")
+        let events = RewardEvents.between(old: before, new: after)
+        guard case .summit(let summit) = events.first else {
+            Issue.record("Expected a summit first, got \(events)")
+            return
+        }
+        #expect(summit.peak.name == "Ben Nevis")
+        let stickers = events.compactMap { event -> String? in
+            if case .sticker(let earned) = event { return earned.sticker.id }
+            return nil
+        }
+        #expect(stickers == ["base-camp"])
+        #expect(after.stickers.contains { $0.sticker.id == "summit-ben-nevis" })
     }
 
     @Test func nothingNewIsNoEvent() {

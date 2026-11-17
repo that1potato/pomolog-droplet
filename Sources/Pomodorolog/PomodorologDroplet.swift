@@ -54,10 +54,13 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
 
     private(set) var host: DropletHost?
     private(set) var store: SessionStore?
+    /// The climbs picked.
+    private(set) var expeditions: ExpeditionStore?
     @Published private(set) var hookStatus: HookStatus = .starting
     /// The session running in Droppy's Pomodoro, as it will be logged.
     @Published private(set) var session: ActiveSession?
-    /// The climb, the pantry and the stickers, worked out from the log.
+    /// The climb, the pantry and the stickers, worked out from the log and the
+    /// picks.
     @Published private(set) var rewards = RewardsSnapshot.empty
     /// True when the rewards come from the sample week, in the harness.
     private(set) var isShowingSample = false
@@ -85,11 +88,17 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
             host.log.notice("Closed a session left running: \(recovered.sectionName), \(recovered.activeSeconds)s, \(recovered.outcome.rawValue)")
         }
         self.store = store
+        let expeditions = ExpeditionStore(directory: host.environment.containerDirectory)
+        expeditions.load()
+        self.expeditions = expeditions
         store.objectWillChange
+            .merge(with: expeditions.objectWillChange)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        // Each publishes before it changes, so the new values come from here.
         store.$sessions
-            .sink { [weak self] sessions in self?.refreshRewards(with: sessions) }
+            .combineLatest(expeditions.$picks)
+            .sink { [weak self] sessions, picks in self?.refreshRewards(with: sessions, picks: picks) }
             .store(in: &cancellables)
         clearReplicaPreferences()
 
@@ -97,7 +106,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
             store?.focusSessionCount(onDay: day) ?? 0
         }
 
-        host.log.info("Pomolog activated, \(store.sessions.count) sessions in \(store.logURL.path)")
+        host.log.info("Pomolog activated, \(store.sessions.count) sessions and \(expeditions.picks.count) picks in \(store.directory.path)")
         diagnose("activated \(Self.version) in Droppy \(host.environment.appVersion), granted \(host.grantedCapabilities.map(\.rawValue).sorted().joined(separator: ", "))")
         if host.environment.isHarness {
             presentHarnessMoment()
@@ -121,6 +130,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         cancellables.removeAll()
         session = nil
         store = nil
+        expeditions = nil
         host = nil
     }
 
@@ -131,15 +141,18 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
         LocalDay.key(for: Date(), utcOffsetSeconds: TimeZone.current.secondsFromGMT())
     }
 
-    /// Works the rewards out again from the log. The harness has no Droppy
-    /// Pomodoro to log, so it shows the design's sample week instead.
-    private func refreshRewards(with sessions: [SessionRecord]) {
+    /// Works the rewards out again from the log and the picks. The harness
+    /// has no Droppy Pomodoro to log, so it shows the design's sample week and
+    /// its climbs instead.
+    private func refreshRewards(with sessions: [SessionRecord], picks: [ClimbPick]) {
         var records = sessions
+        var picks = picks
         isShowingSample = records.isEmpty && host?.environment.isHarness == true
         if isShowingSample {
             records = SampleLog.week(endingOn: today, utcOffsetSeconds: TimeZone.current.secondsFromGMT())
+            picks = SampleLog.picks(for: records)
         }
-        rewards = RewardsSnapshot(records: records, today: today)
+        rewards = RewardsSnapshot(records: records, picks: picks, today: today)
     }
 
     /// The running focus's share of the climb so far, so the climber moves
@@ -150,6 +163,16 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     }
 
     // MARK: Commands
+
+    /// Starts a climb of the peak at `index` in `Peaks.all`, from its foot.
+    /// The climb under way is left behind; picking the peak already being
+    /// climbed changes nothing.
+    func pickClimb(_ index: Int) {
+        guard Peaks.all.indices.contains(index), let expeditions else { return }
+        guard rewards.climb.current?.peakIndex != index else { return }
+        expeditions.pick(Peaks.all[index], at: Date())
+        diagnose("picked \(Peaks.all[index].name) to climb")
+    }
 
     func revealLog() {
         guard let store, let host else { return }

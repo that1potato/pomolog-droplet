@@ -104,13 +104,13 @@ struct ExpeditionLogModel: Equatable {
     /// A peak on the route page.
     struct RouteRow: Equatable {
         enum State: Equatable {
-            /// Reached on this ascent, when the session that crossed the top
-            /// ended.
-            case climbed(Date)
+            /// Its top reached: when the session that reached it last ended,
+            /// and how many times.
+            case climbed(Date, times: Int)
             /// Being climbed: metres up it so far, and that as a fraction of
             /// its height.
             case current(metres: Double, fraction: Double)
-            /// Not reached yet on this ascent.
+            /// Not climbed to the top yet.
             case ahead
         }
 
@@ -128,8 +128,9 @@ struct ExpeditionLogModel: Equatable {
         var spokenText: String {
             let title = "\(peak.name), \(SummitWidgetModel.metres(peak.height)) metres"
             switch state {
-            case .climbed(let date):
-                return "\(title), climbed on \(date.formatted(.dateTime.day().month(.wide)))"
+            case .climbed(let date, let times):
+                let again = times > 1 ? " \(times) times, last" : ""
+                return "\(title), climbed\(again) on \(date.formatted(.dateTime.day().month(.wide)))"
             case .current(let metres, let fraction):
                 return "\(title), \(SummitWidgetModel.metres(metres)) climbed, \(Int((fraction * 100).rounded(.down))) percent"
             case .ahead:
@@ -138,8 +139,18 @@ struct ExpeditionLogModel: Equatable {
         }
     }
 
-    let position: PeakPosition
+    /// The climb under way, with a running focus's share so far. Nil when
+    /// nothing is being climbed.
+    let current: Expedition?
     let rows: [RouteRow]
+    /// How many peaks' tops have been reached.
+    let summitedPeaks: Int
+    /// Whether any climb has ever been picked.
+    let hasClimbed: Bool
+    /// The metres logged on the climb under way: what a switch would clear. A
+    /// running focus isn't among them, it counts toward whichever climb is
+    /// picked when it ends.
+    let loggedMetres: Double
     /// Today's key, for the right page's heading.
     let day: String
     /// Today's climb, with a running focus's share so far.
@@ -152,13 +163,20 @@ struct ExpeditionLogModel: Equatable {
     let stickers: [EarnedSticker]
 
     init(rewards: RewardsSnapshot, today: String, live: ClimbStep?, since: Date?) {
-        position = Peaks.position(at: live?.after ?? rewards.climb.total)
-        rows = Self.rows(at: position, summits: rewards.climb.summits, now: live?.endedAt ?? .now)
+        var current = rewards.climb.current
+        loggedMetres = current?.metres ?? 0
+        if let live, live.expedition != nil, live.expedition == rewards.climb.expeditions.indices.last {
+            current?.metres = live.after
+        }
+        self.current = current
+        rows = Self.rows(current: current, summits: rewards.climb.summits)
+        summitedPeaks = Set(rewards.climb.summits.map(\.peakIndex)).count
+        hasClimbed = !rewards.climb.expeditions.isEmpty
         self.day = today
         var day = rewards.climb.day(today)
         if let live, live.day == today {
-            day.focusMetres += live.baseMetres
-            day.bonusMetres += live.bonusMetres
+            day.focusMetres += live.climbedFocus
+            day.bonusMetres += live.climbedBonus
             day.sessions += 1
             if live.startedFromBreak { day.startedFromBreak += 1 }
         }
@@ -176,29 +194,44 @@ struct ExpeditionLogModel: Equatable {
         stickers = rewards.stickers
     }
 
-    /// The route at `position`: the peaks before it on this ascent climbed and
-    /// dated by their summits, the one it is on being climbed, the rest
-    /// ahead. A top the running focus crossed has no summit logged yet, so it
-    /// takes `now`.
-    static func rows(at position: PeakPosition, summits: [Summit], now: Date) -> [RouteRow] {
+    /// Every peak: the one being climbed, those whose tops were reached
+    /// dated by the latest, the rest still to climb.
+    static func rows(current: Expedition?, summits: [Summit]) -> [RouteRow] {
         Peaks.all.indices.map { index in
-            if index < position.index {
-                let summit = summits.last { $0.ascent == position.ascent && $0.peakIndex == index }
-                return RouteRow(index: index, state: .climbed(summit?.date ?? now))
+            if let current, current.peakIndex == index {
+                return RouteRow(index: index, state: .current(metres: current.metres, fraction: current.fraction))
             }
-            if index == position.index {
-                return RouteRow(index: index, state: .current(metres: position.metres, fraction: position.fraction))
+            let reached = summits.filter { $0.peakIndex == index }
+            if let latest = reached.last {
+                return RouteRow(index: index, state: .climbed(latest.date, times: reached.count))
             }
             return RouteRow(index: index, state: .ahead)
         }
     }
 
-    /// `2 of 7 climbed`, with the ascent after the first time up.
-    var climbedText: String { Self.climbedText(at: position) }
+    /// `2 of 7 climbed`: the peaks whose tops have been reached.
+    var climbedText: String { "\(summitedPeaks) of \(Peaks.all.count) climbed" }
 
-    static func climbedText(at position: PeakPosition) -> String {
-        let climbed = "\(position.index) of \(Peaks.all.count) climbed"
-        return position.ascent > 1 ? "Ascent \(position.ascent) · \(climbed)" : climbed
+    /// Nothing is being climbed, so every peak offers its Climb button.
+    var isPicking: Bool { current == nil }
+
+    /// `The route` while a climb is under way, or a nudge to pick one.
+    var headingText: String {
+        if current != nil { return "The route" }
+        return hasClimbed ? "Pick your next climb" : "Pick your first climb"
+    }
+
+    /// The question a row asks before leaving the climb under way.
+    struct SwitchWarning: Equatable {
+        let title: String
+        let detail: String
+    }
+
+    /// Whether to ask before leaving the climb under way for the peak at
+    /// `index`: only when logged metres there would be lost.
+    func switchWarning(to index: Int) -> SwitchWarning? {
+        guard let current, current.peakIndex != index, loggedMetres > 0 else { return nil }
+        return SwitchWarning(title: "Leave \(current.peak.name)?", detail: "Your progress will be lost")
     }
 
     /// `Sunday, 15 November`, in the Mac's own date style. The key's noon UTC,
@@ -266,6 +299,8 @@ enum JournalInk {
     static let stitch = Color(hex: "#B5A586")
     static let cover = Color(hex: "#8E2F27")
     static let highlight = Color(hex: "#D6483A").opacity(0.12)
+    /// Behind a row asking whether to leave the climb under way.
+    static let warning = Color(hex: "#E9B44C").opacity(0.16)
     static let climbed = Color(hex: "#3F7A4C")
     static let current = Color(hex: "#C2463A")
     static let stickerRing = Color(hex: "#FFFDF8")
@@ -325,7 +360,7 @@ private struct ExpeditionLogView: View {
             )
             VStack(alignment: .leading, spacing: DroppySpacing.smd) {
                 header
-                JournalNotebook(model: model)
+                JournalNotebook(model: model) { droplet.pickClimb($0) }
                     // Room for the ribbon to hang below the pages.
                     .padding(.bottom, DroppySpacing.mdl)
             }
@@ -359,10 +394,12 @@ private struct ExpeditionLogView: View {
 /// right, the gutter stitched between them and a ribbon hanging out.
 private struct JournalNotebook: View {
     let model: ExpeditionLogModel
+    /// Picks the peak at an index in `Peaks.all` to climb.
+    let onPick: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            RoutePage(model: model)
+            RoutePage(model: model, onPick: onPick)
                 .background(PaperPage(shape: UnevenRoundedRectangle(
                     topLeadingRadius: 8, bottomLeadingRadius: 8,
                     bottomTrailingRadius: 2, topTrailingRadius: 2, style: .continuous
@@ -393,17 +430,28 @@ private struct JournalNotebook: View {
                 .offset(x: 275, y: 13)
                 .accessibilityHidden(true)
         }
+        // The pages are paper, a light surface: Droppy's controls on them take
+        // their dark ink and light backing. The journal's own inks are fixed.
+        .environment(\.colorScheme, .light)
     }
 }
 
-/// The left page: every peak on the way, in order.
+/// The left page: every peak, a Climb button on each that can be picked.
+/// While a climb is under way a row shows its button when pointed at; with
+/// nothing picked, every row shows it.
 private struct RoutePage: View {
     let model: ExpeditionLogModel
+    let onPick: (Int) -> Void
+
+    /// The row pointed at.
+    @State private var hovered: Int?
+    /// The row asking whether to leave the climb under way.
+    @State private var confirming: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("The route")
+                Text(verbatim: model.headingText)
                     .font(Journal.hand(Journal.heading))
                 Spacer(minLength: DroppySpacing.sm)
                 Text(verbatim: model.climbedText)
@@ -413,23 +461,67 @@ private struct RoutePage: View {
             }
             .frame(height: 24, alignment: .top)
             ForEach(model.rows, id: \.index) { row in
-                RouteRowView(row: row, isLast: row.index == Peaks.all.count - 1)
+                let isLast = row.index == Peaks.all.count - 1
+                if confirming == row.index, let warning = model.switchWarning(to: row.index) {
+                    SwitchWarningRow(
+                        warning: warning,
+                        onCancel: { confirming = nil },
+                        onSwitch: {
+                            confirming = nil
+                            onPick(row.index)
+                        }
+                    )
+                } else {
+                    RouteRowView(
+                        row: row,
+                        isLast: isLast,
+                        showsClimb: model.current?.peakIndex != row.index && (model.isPicking || hovered == row.index),
+                        onClimb: { climb(row.index) }
+                    )
+                    .onHover { inside in
+                        if inside {
+                            hovered = row.index
+                        } else if hovered == row.index {
+                            hovered = nil
+                        }
+                    }
+                }
             }
         }
         .foregroundStyle(JournalInk.text)
         .lineLimit(1)
+        // A Climb button on every row while picking: Droppy's flat wash, no
+        // glass pass per row.
+        .droppyFlatGlassControls()
         .padding(.horizontal, DroppySpacing.lg)
         .padding(.vertical, DroppySpacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Picks at once, unless metres on the climb under way would be lost.
+    private func climb(_ index: Int) {
+        if model.switchWarning(to: index) != nil {
+            confirming = index
+        } else {
+            confirming = nil
+            onPick(index)
+        }
     }
 }
 
 private struct RouteRowView: View {
     let row: ExpeditionLogModel.RouteRow
     let isLast: Bool
+    /// The Climb button in place of the row's status.
+    var showsClimb = false
+    var onClimb: () -> Void = {}
 
     private var isCurrent: Bool {
         if case .current = row.state { true } else { false }
+    }
+
+    private var isClimbed: Bool {
+        if case .climbed = row.state { true } else { false }
     }
 
     private var isAhead: Bool { row.state == .ahead }
@@ -444,20 +536,41 @@ private struct RouteRowView: View {
 
     var body: some View {
         HStack(spacing: DroppySpacing.md) {
-            PeakIcon(index: row.index, style: iconStyle)
-                .frame(width: Journal.icon.width, height: Journal.icon.height)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: row.peak.name)
-                    .font(Journal.print(Journal.name))
-                    .foregroundStyle(isAhead ? JournalInk.secondary : JournalInk.text)
-                Text(verbatim: row.detailText)
-                    .font(.system(size: Journal.small))
-                    .foregroundStyle(isAhead ? JournalInk.tertiary : JournalInk.secondary)
+            HStack(spacing: DroppySpacing.md) {
+                PeakIcon(index: row.index, style: iconStyle)
+                    .frame(width: Journal.icon.width, height: Journal.icon.height)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: DroppySpacing.xs) {
+                        Text(verbatim: row.peak.name)
+                            .font(Journal.print(Journal.name))
+                            .foregroundStyle(isAhead ? JournalInk.secondary : JournalInk.text)
+                        // The status gives way to the button, so the tick
+                        // moves beside the name.
+                        if showsClimb && isClimbed {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(JournalInk.climbed)
+                        }
+                    }
+                    Text(verbatim: row.detailText)
+                        .font(.system(size: Journal.small))
+                        .foregroundStyle(isAhead ? JournalInk.tertiary : JournalInk.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !showsClimb {
+                    status
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            status
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(row.spokenText)
+            if showsClimb {
+                Button("Climb", action: onClimb)
+                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                    .accessibilityLabel("Climb \(row.peak.name)")
+            }
         }
         .frame(height: Journal.rowHeight)
+        .contentShape(Rectangle())
         .background {
             // Past the row's edges, so the highlight takes no width from it.
             if isCurrent {
@@ -472,14 +585,12 @@ private struct RouteRowView: View {
                 Rectangle().fill(JournalInk.rule).frame(height: 1)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.spokenText)
     }
 
     @ViewBuilder
     private var status: some View {
         switch row.state {
-        case .climbed(let date):
+        case .climbed(let date, _):
             HStack(spacing: 3) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
@@ -499,6 +610,46 @@ private struct RouteRowView: View {
         case .ahead:
             EmptyView()
         }
+    }
+}
+
+/// A row asking whether to leave the climb under way: two short lines, then
+/// Cancel and Switch. Nothing changes until Switch.
+private struct SwitchWarningRow: View {
+    let warning: ExpeditionLogModel.SwitchWarning
+    let onCancel: () -> Void
+    let onSwitch: () -> Void
+
+    var body: some View {
+        HStack(spacing: DroppySpacing.sm) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: warning.title)
+                    .font(Journal.print(Journal.name))
+                    .foregroundStyle(JournalInk.text)
+                    // The longest name only just fits; it may give a little.
+                    .minimumScaleFactor(0.85)
+                Text(verbatim: warning.detail)
+                    .font(.system(size: Journal.small))
+                    .foregroundStyle(JournalInk.current)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: DroppySpacing.xsm) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                Button("Switch", action: onSwitch)
+                    .buttonStyle(DroppyQuietButtonStyle(size: .small, destructive: true))
+            }
+        }
+        .frame(height: Journal.rowHeight)
+        .background {
+            RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous)
+                .fill(JournalInk.warning)
+                .padding(.horizontal, -DroppySpacing.xsm)
+                .padding(.vertical, 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(warning.title) \(warning.detail)")
     }
 }
 
@@ -604,6 +755,12 @@ private struct StickerRow: View {
                     .padding(2)
                     .background(Circle().fill(JournalInk.stickerRing))
                     .rotationEffect(.degrees(Self.tilt(earned.sticker.id)))
+                    .overlay(alignment: .bottomTrailing) {
+                        if earned.count > 1 {
+                            StickerCount(count: earned.count, ring: JournalInk.stickerRing)
+                                .offset(x: 9, y: 4)
+                        }
+                    }
                     .help(earned.sticker.name)
             }
             ForEach(0..<model.shownLocked, id: \.self) { _ in
@@ -686,25 +843,38 @@ private struct RibbonShape: Shape {
 }
 
 /// A sticker as a disc in its colour with its symbol, or a question mark for
-/// one not found yet.
+/// one not found yet. A peak's sticker draws the peak's own symbol, and one
+/// not reached yet draws it greyed, since every peak is known from the start.
 struct StickerDisc: View {
     let sticker: Sticker?
     var size: CGFloat = 24
     /// On the shelf's black, or in Settings, which follows the Mac's
     /// appearance: decides how a sticker not found yet is drawn.
     var onShelf = true
+    /// The peak whose sticker this is, when it hasn't been found yet.
+    var lockedPeak: Int? = nil
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(sticker.map { Color(hex: $0.colorHex) } ?? lockedFill)
-            Image(systemName: sticker?.symbol ?? "questionmark")
-                .font(.system(size: size * 0.52, weight: .semibold))
-                .foregroundStyle(sticker == nil ? lockedInk : Color.black.opacity(0.78))
+            if let peak = sticker?.peak ?? lockedPeak {
+                SummitGlyph(peak: peak, ink: sticker == nil ? lockedInk : Color.black.opacity(0.78))
+            } else {
+                Image(systemName: sticker?.symbol ?? "questionmark")
+                    .font(.system(size: size * 0.52, weight: .semibold))
+                    .foregroundStyle(sticker == nil ? lockedInk : Color.black.opacity(0.78))
+            }
         }
         .frame(width: size, height: size)
         .accessibilityElement()
-        .accessibilityLabel(sticker?.name ?? "A sticker not found yet")
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        if let sticker { return sticker.name }
+        if let lockedPeak, Peaks.all.indices.contains(lockedPeak) { return "\(Peaks.all[lockedPeak].name), not climbed yet" }
+        return "A sticker not found yet"
     }
 
     private var lockedFill: Color { onShelf ? Color.white.opacity(0.07) : Color.primary.opacity(0.07) }

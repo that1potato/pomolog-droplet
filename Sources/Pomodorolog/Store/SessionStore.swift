@@ -333,7 +333,8 @@ final class SessionStore: ObservableObject {
         return decoder
     }()
 
-    private static func fileStamp(_ date: Date) -> String {
+    /// `2026-11-17-183005`, for a file moved aside.
+    static func fileStamp(_ date: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)

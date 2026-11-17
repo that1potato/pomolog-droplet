@@ -7,7 +7,7 @@ import Testing
     let sample = SampleLog.week(endingOn: "2026-11-15")
 
     private var rewards: RewardsSnapshot {
-        RewardsSnapshot(records: sample, today: "2026-11-15")
+        RewardsSnapshot(records: sample, picks: SampleLog.picks(for: sample), today: "2026-11-15")
     }
 
     @Test func everyPeakHasAPictureAndATrailInsideIt() {
@@ -47,18 +47,19 @@ import Testing
         #expect(scene.art.trail == PeakScenes.all[2].trail)
     }
 
-    @Test func theSampleWeekStandsHalfwayUpMontBlanc() {
+    @Test func theSampleWeekStandsNearlyHalfwayUpMontBlanc() {
         let scene = SummitScene(rewards: rewards, today: "2026-11-15")
         #expect(scene.peak.name == "Mont Blanc")
-        #expect(scene.climbed == 2529)
-        #expect(abs(scene.fraction - 2529.0 / 4808.0) < 1e-9)
+        #expect(scene.status == .climbing)
+        #expect(scene.climbed == 2200)
+        #expect(abs(scene.fraction - 2200.0 / 4808.0) < 1e-9)
     }
 
     @Test func eachTomatoOnThisPeakIsAMarkerAndTheFourthOfADayIsAJar() {
         let scene = SummitScene(rewards: rewards, today: "2026-11-15")
-        // Friday's second, Saturday's two and Sunday's six: Friday's first
-        // ended mostly on Mount Fuji.
-        #expect(scene.markers.count == 9)
+        // Saturday's two and Sunday's six: Mont Blanc was picked on Friday,
+        // after both of that day's tomatoes.
+        #expect(scene.markers.count == 8)
         #expect(scene.markers.filter(\.isJar).count == 1)
         #expect(scene.markers.filter(\.isToday).count == 6)
         let places = scene.markers.map(\.at)
@@ -67,11 +68,11 @@ import Testing
 
     @Test func theBonusLeadsItsStretchInItsOwnInk() {
         let scene = SummitScene(rewards: rewards, today: "2026-11-15")
-        #expect(scene.stretches.count == 15)
+        #expect(scene.stretches.count == 12)
         #expect(scene.stretches.filter { $0.ink == .todayBonus }.count == 3)
-        #expect(scene.stretches.filter { $0.ink == .earlierBonus }.count == 2)
+        #expect(scene.stretches.filter { $0.ink == .earlierBonus }.count == 1)
         let todayInks = scene.stretches.filter { $0.ink == .today || $0.ink == .todayBonus }
-        #expect(todayInks.first?.from == 879.0 / 4808.0)
+        #expect(todayInks.first?.from == 550.0 / 4808.0)
     }
 
     @Test func aRunningFocusMovesTheClimber() throws {
@@ -83,34 +84,80 @@ import Testing
         )
         let live = rewards.climb.provisionalStep(for: active, after: sample, at: end.addingTimeInterval(600))
         let scene = SummitScene(rewards: rewards, today: "2026-11-15", live: live)
-        #expect(scene.climbed == 2649)
-        #expect(scene.stretches.count == 17)
-        #expect(scene.markers.count == 9)
+        #expect(scene.climbed == 2320)
+        #expect(scene.stretches.count == 14)
+        #expect(scene.markers.count == 8)
     }
 
-    @Test func nothingLoggedStandsAtTheFootOfBenNevis() {
-        let scene = SummitScene(rewards: RewardsSnapshot(records: [], today: "2026-11-15"), today: "2026-11-15")
+    @Test func nothingPickedStandsAtTheFootOfBenNevis() {
+        let scene = SummitScene(rewards: RewardsSnapshot(records: sample, picks: [], today: "2026-11-15"), today: "2026-11-15")
+        #expect(scene.status == .noClimb)
         #expect(scene.peak.name == "Ben Nevis")
         #expect(scene.climbed == 0)
         #expect(scene.stretches.isEmpty)
         #expect(scene.markers.isEmpty)
     }
 
+    @Test func aSummitStaysOnItsPeakUntilTheNextPick() throws {
+        // Ben Nevis picked at the start of the week and never again.
+        let first = try #require(sample.first?.startedAt)
+        let rewards = RewardsSnapshot(records: sample, picks: [ClimbPick(Peaks.all[0], at: first)], today: "2026-11-15")
+        let scene = SummitScene(rewards: rewards, today: "2026-11-15")
+        let summit = try #require(rewards.climb.summits.first)
+        #expect(scene.status == .summited(summit.date))
+        #expect(scene.climbed == 1345)
+        #expect(scene.fraction == 1)
+        let model = SummitWidgetModel(rewards: rewards, today: "2026-11-15", live: nil, logging: true)
+        #expect(model.state == .summited)
+        // The widget's empty sky, until the next pick.
+        #expect(model.showsEmptyView)
+        #expect(model.peakTitle == "Summit")
+        #expect(model.lastSummitText == "Ben Nevis climbed on \(summit.date.formatted(.dateTime.day().month(.abbreviated)))")
+        #expect(model.emptyHint == "Pick a mountain in the expedition log when you're ready.")
+        #expect(model.statusText == model.emptyHint)
+    }
+
+    @Test func aRunningFocusThatReachesTheTopStaysOnThePeakUntilItIsLogged() throws {
+        // Five tomatoes up Ben Nevis, 1,250 m, then a focus 20 minutes in.
+        var log = SessionLogBuilder(day: "2026-11-10", at: 9)
+        log.focus(then: .stop)
+        for _ in 0..<4 {
+            log.wait(minutes: 30)
+            log.focus(then: .stop)
+        }
+        let rewards = RewardsSnapshot(records: log.records, picks: [ClimbPick(Peaks.all[0], at: log.records[0].startedAt)], today: "2026-11-10")
+        #expect(rewards.climb.current?.metres == 1250)
+        let start = try #require(log.records.last?.endedAt).addingTimeInterval(1800)
+        let active = ActiveSession(
+            id: UUID(), kind: .focus, sectionID: "focus", sectionName: "Focus", sectionColorHex: "#FF9500",
+            plannedSeconds: 1500, startedAt: start, timeZoneID: "GMT", utcOffsetSeconds: 0,
+            events: [SessionEvent(type: .start, at: start)], cycleIndex: 5, title: nil, lastSeenAt: start
+        )
+        let live = rewards.climb.provisionalStep(for: active, after: log.records, at: start.addingTimeInterval(1200))
+        let model = SummitWidgetModel(rewards: rewards, today: "2026-11-10", live: live, logging: true)
+        #expect(model.scene.climbed == 1345)
+        #expect(model.scene.status == .climbing)
+        #expect(!model.showsEmptyView)
+        #expect(model.peakTitle == "Ben Nevis")
+        #expect(model.statusText == "Summit reached")
+    }
+
     @Test func theWidgetSaysWhereYouAreAndHowFarToGo() {
         let model = SummitWidgetModel(rewards: rewards, today: "2026-11-15", live: nil, logging: true)
         #expect(model.state == .climbing)
+        #expect(!model.showsEmptyView)
         #expect(model.peakTitle == "Mont Blanc")
-        #expect(model.altitudeText == "\(2529.formatted()) of \(4808.formatted()) m")
-        #expect(model.percentText == "52%")
+        #expect(model.altitudeText == "\(2200.formatted()) of \(4808.formatted()) m")
+        #expect(model.percentText == "45%")
         #expect(model.todayTomatoes == 6)
         #expect(model.todayJars == 1)
-        #expect(model.climbedText == 2529.formatted())
-        #expect(model.ofText == "of \(4808.formatted()) m · 52% up")
+        #expect(model.climbedText == 2200.formatted())
+        #expect(model.ofText == "of \(4808.formatted()) m · 45% up")
         // Six today: one jar and two loose.
         #expect(model.todayGlyphs.jars == 1)
         #expect(model.todayGlyphs.loose == 2)
-        // 2,279 m to go at 275 m a session, the pace of the last ten.
-        #expect(model.statusText == "Summit in about 8 sessions")
+        // 2,608 m to go at 275 m a session, the pace of the last ten.
+        #expect(model.statusText == "Summit in about 9 sessions")
     }
 
     @Test func quickSessionsDoNotSetThePace() {
@@ -122,16 +169,27 @@ import Testing
             log.wait(minutes: 30)
             log.focus(1, then: .stop)
         }
-        let rewards = RewardsSnapshot(records: log.records, today: "2026-11-10")
+        let rewards = RewardsSnapshot(records: log.records, picks: [ClimbPick(Peaks.all[0], at: log.records[0].startedAt)], today: "2026-11-10")
         let model = SummitWidgetModel(rewards: rewards, today: "2026-11-10", live: nil, logging: true)
         #expect(model.statusText == "Summit in about 4 sessions")
     }
 
-    @Test func theWidgetInvitesAFirstFocusAndSaysWhenItCannotLog() {
-        let empty = RewardsSnapshot(records: [], today: "2026-11-15")
-        #expect(SummitWidgetModel(rewards: empty, today: "2026-11-15", live: nil, logging: true).statusText
-            == "Start a focus to begin the climb")
+    @Test func theWidgetAsksForAClimbThenAFirstFocusAndSaysWhenItCannotLog() {
+        let nothing = RewardsSnapshot(records: [], picks: [], today: "2026-11-15")
+        let model = SummitWidgetModel(rewards: nothing, today: "2026-11-15", live: nil, logging: true)
+        #expect(model.state == .noClimb)
+        #expect(model.showsEmptyView)
+        #expect(model.peakTitle == "Summit")
+        #expect(model.lastSummitText == "No peaks climbed yet")
+        #expect(model.emptyHint == "Pick a mountain in the expedition log when you're ready.")
+        let picked = RewardsSnapshot(records: [], picks: [ClimbPick(Peaks.all[1], at: .now)], today: "2026-11-15")
+        let started = SummitWidgetModel(rewards: picked, today: "2026-11-15", live: nil, logging: true)
+        #expect(!started.showsEmptyView)
+        #expect(started.peakTitle == "Mount Fuji")
+        #expect(started.statusText == "Start a focus to begin the climb")
         #expect(SummitWidgetModel(rewards: rewards, today: "2026-11-15", live: nil, logging: false).statusText
+            == "Not logging, see Settings")
+        #expect(SummitWidgetModel(rewards: nothing, today: "2026-11-15", live: nil, logging: false).emptyHint
             == "Not logging, see Settings")
     }
 }

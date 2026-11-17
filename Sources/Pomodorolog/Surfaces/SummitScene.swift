@@ -112,8 +112,19 @@ struct SummitScene: Equatable {
         let isToday: Bool
     }
 
+    /// Where the climb stands.
+    enum Status: Equatable, Sendable {
+        /// Nothing picked yet: the first peak, with nothing climbed.
+        case noClimb
+        /// Under way.
+        case climbing
+        /// At the top, when the session that reached it ended. The next climb
+        /// isn't picked yet.
+        case summited(Date)
+    }
+
     let peakIndex: Int
-    let ascent: Int
+    let status: Status
     /// Metres climbed on this peak.
     let climbed: Double
     let stretches: [Stretch]
@@ -124,54 +135,59 @@ struct SummitScene: Equatable {
     var fraction: Double { min(max(climbed / peak.height, 0), 1) }
 
     /// A scene set by hand, for previews and tests.
-    init(peakIndex: Int, ascent: Int = 1, climbed: Double, stretches: [Stretch] = [], markers: [Marker] = []) {
+    init(peakIndex: Int, status: Status = .climbing, climbed: Double, stretches: [Stretch] = [], markers: [Marker] = []) {
         self.peakIndex = peakIndex
-        self.ascent = ascent
+        self.status = status
         self.climbed = climbed
         self.stretches = stretches
         self.markers = markers
     }
 
-    /// `live` is the running focus's share so far, drawn like today's.
+    /// The latest climb: the one under way, or the one whose top was reached
+    /// last. `live` is the running focus's share so far, drawn like today's.
     init(rewards: RewardsSnapshot, today: String, live: ClimbStep? = nil) {
-        let total = live?.after ?? rewards.climb.total
-        let position = Peaks.position(at: total)
-        let foot = Peaks.foot(ofPeak: position.index, ascent: position.ascent)
-        let top = foot + position.peak.height
-        func fraction(_ altitude: Double) -> Double {
-            min(max((altitude - foot) / position.peak.height, 0), 1)
+        let climb = rewards.climb
+        guard let index = climb.expeditions.indices.last else {
+            self.init(peakIndex: 0, status: .noClimb, climbed: 0)
+            return
         }
-
+        let expedition = climb.expeditions[index]
+        let live = live?.expedition == index ? live : nil
+        let height = expedition.peak.height
         let tomatoes = Dictionary(
             rewards.pantry.tomatoes.map { ($0.recordID, $0.isJar) },
             uniquingKeysWith: { first, _ in first }
         )
-        var steps = rewards.climb.steps
+        var steps = climb.steps.filter { $0.expedition == index }
         if let live { steps.append(live) }
 
         var stretches: [Stretch] = []
         var markers: [Marker] = []
-        for step in steps where step.after > foot && step.before < top {
+        for step in steps where step.climbed > 0 {
             let isToday = step.day == today
             // The bonus comes from the break before, so it leads the stretch.
-            let bonusEnd = step.before + step.bonusMetres
-            if step.bonusMetres > 0, bonusEnd > foot {
-                stretches.append(Stretch(from: fraction(step.before), to: fraction(bonusEnd), ink: isToday ? .todayBonus : .earlierBonus))
+            let bonusEnd = step.before + step.climbedBonus
+            if bonusEnd > step.before {
+                stretches.append(Stretch(from: step.before / height, to: bonusEnd / height, ink: isToday ? .todayBonus : .earlierBonus))
             }
-            if step.after > max(bonusEnd, foot) {
-                stretches.append(Stretch(from: fraction(bonusEnd), to: fraction(step.after), ink: isToday ? .today : .earlier))
+            if step.after > bonusEnd {
+                stretches.append(Stretch(from: bonusEnd / height, to: step.after / height, ink: isToday ? .today : .earlier))
             }
-            let middle = (step.before + step.after) / 2
-            if let isJar = tomatoes[step.recordID], middle >= foot, middle < top {
-                markers.append(Marker(at: fraction(middle), isJar: isJar, isToday: isToday))
+            if let isJar = tomatoes[step.recordID] {
+                markers.append(Marker(at: (step.before + step.after) / 2 / height, isJar: isJar, isToday: isToday))
             }
         }
 
-        peakIndex = position.index
-        ascent = position.ascent
-        climbed = position.metres
-        self.stretches = stretches
-        self.markers = markers
+        let climbed = live?.after ?? expedition.metres
+        // A focus still running that reaches the top stays a climb at its top
+        // until it's logged.
+        self.init(
+            peakIndex: expedition.peakIndex,
+            status: expedition.summitedAt.map { .summited($0) } ?? .climbing,
+            climbed: climbed,
+            stretches: stretches,
+            markers: markers
+        )
     }
 }
 
