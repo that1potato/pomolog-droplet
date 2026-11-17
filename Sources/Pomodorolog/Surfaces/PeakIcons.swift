@@ -2,85 +2,82 @@
 //  PeakIcons.swift
 //  Pomodorolog
 //
-//  An icon for each peak, drawn from its real outline: Ben Nevis's broad
-//  hump with snow in its gullies, Fuji's cone, Mont Blanc's snow dome behind
-//  the Chamonix needles, Kibo's flat top with Mawenzi beside it, Aconcagua's
-//  two summits, Everest beside Lhotse with its plume, and Olympus Mons, a
-//  shield far wider than it is tall, under Mars's two moons. Flat tones: a
-//  lit side, a shaded side and snow.
+//  An icon for each peak, cut down from the view the summit widget draws:
+//  Ben Nevis's dome above its foothill, Fuji's broad cone, Mont Blanc's long
+//  ridge behind the Aiguille de Bionnassay, Mawenzi beside flat-topped Kibo,
+//  Aconcagua's south face, Everest's north face behind Changtse, and Olympus
+//  Mons, a low shield with a scarp and a caldera, under Mars's two moons.
+//  Straight edges and flat ink, with a sketched hand: the shaded side is
+//  hatched, the outline is gone over twice, and the ground is one loose line.
 //
 
 import SwiftUI
 
 /// One peak's artwork as SVG path data, in a 100 × 60 box with the ground at
-/// y 58. The data is the approved design's, number for number.
+/// y 56. The data is the approved design's, number for number.
 struct PeakArt: Sendable {
     let silhouette: String
-    /// The side in shadow, drawn inside the silhouette.
+    /// The side in shadow, hatched inside the silhouette.
     let shade: String
     /// Drawn inside the silhouette.
     var snow: String?
-    /// A nearer ridge drawn over the peak: Mont Blanc's needles, Mawenzi.
+    /// A nearer hill or peak drawn over this one: Ben Nevis's foothill, the
+    /// Aiguille de Bionnassay, Changtse.
     var front: String?
-    /// Everest's.
-    var plume: String?
     /// Phobos and Deimos.
     var moons: [CGRect] = []
     /// Painted in Mars's colours.
     var isMars = false
 
     static let box = CGSize(width: 100, height: 60)
-    static let ground: CGFloat = 58
+    static let ground: CGFloat = 56
 
     /// In the order of `Peaks.all`.
     static let all: [PeakArt] = [benNevis, fuji, montBlanc, kilimanjaro, aconcagua, everest, olympusMons]
 
     static let benNevis = PeakArt(
-        silhouette: "M2,58 C16,55 26,46 36,35 C44,27 51,22 59,20.8 C64,20.2 68,21.2 71,23.6 C75,27.4 78,34 82,40.5 C86.5,47.5 92,53.5 98,58 Z",
-        shade: "M61,0 L61,19 C66,30 70,44 70,60 L100,60 L100,0 Z",
-        snow: "M42,29 C49,22.5 56,20.2 63,20.2 C67.5,20.4 71,22.4 73.6,25.4 C71.6,26 70.2,27.4 69.4,30.4 C68.2,27.6 66.4,26.4 63.8,26.6 C61,26.8 59.8,28.8 58.8,31 C57.4,28 55,27 51.6,27.6 C48.4,28.2 45.4,29.6 42,29 Z M74.5,28 C76.4,31.6 77.8,35 78.6,38.6 C77.8,39 77.1,38.8 76.7,38.2 C76,34.8 75,31.8 73.4,28.6 Z"
+        silhouette: "M8,56 L20,40 L27,30 L31,24 L34,19 L44,15 L56,13 L68,15 L78,22 L88,32 L96,40 L96,56 Z",
+        shade: "M8,56 L20,40 L27,30 L31,24 L34,19 L37,28 L33,42 L28,56 Z M68,15 L78,22 L88,32 L96,40 L96,56 L80,56 L74,34 Z",
+        snow: "M34,19 L44,15 L56,13 L68,15 L74,19 L68,19 L62,23 L55,18 L48,23 L41,19 Z",
+        front: "M2,56 L18,50 L36,46 L52,45 L68,47 L84,52 L98,56 Z"
     )
 
     static let fuji = PeakArt(
-        silhouette: "M2,58 C24,54 34,40 42,18 C43,15.6 44.6,14 46.6,14 L53.4,14 C55.4,14 57,15.6 58,18 C66,40 76,54 98,58 Z",
-        shade: "M52,0 L52,13 C55,30 60,46 66,60 L100,60 L100,0 Z",
-        snow: "M20,0 L80,0 L80,31 Q66.5,29.5 64.6,31.6 Q61.6,26 59.6,33.2 Q56.6,26 54,34.2 Q51,26.4 48,33.6 Q45,26.4 42.4,32.2 Q39.4,26.4 36.6,31.2 Q34,29.4 20,31 Z"
+        silhouette: "M2,56 L16,52 L30,45 L40,36 L47,26 L52,17 L54,14 L57,13 L60,14 L63,13 L66,14 L68,17 L73,26 L80,36 L90,45 L98,50 L98,56 Z",
+        shade: "M60,14 L63,13 L66,14 L68,17 L73,26 L80,36 L90,45 L98,50 L98,56 L70,56 L64,36 Z",
+        snow: "M47,26 L52,17 L54,14 L57,13 L60,14 L63,13 L66,14 L68,17 L73,26 L70,24 L68,30 L64,23 L60,31 L56,23 L52,29 L50,24 Z"
     )
 
     static let montBlanc = PeakArt(
-        silhouette: "M2,58 C10,51 18,43 28,37 C38,30.5 46,18 58,15.6 C68,14 78,20 85,30 C90,38 94,48 98,58 Z",
-        shade: "M60,0 L60,15 C64,28 67,44 67,60 L100,60 L100,0 Z",
-        snow: "M0,0 L100,0 L100,47 Q93,41.5 89,47 Q85,39.5 79,45 Q73,37.5 67,43 Q61,35.5 55,41 Q49,34.5 43,40 Q37,35.5 31,40.5 Q24,37.5 0,42.5 Z",
-        front: "M7,58 L14.5,42 C15,41 15.6,41 16,42 L17.4,45 L21,31.5 C21.3,30.6 21.9,30.6 22.2,31.5 L24.6,39 L26.4,35.6 C26.7,35 27.2,35 27.5,35.6 L31,46 L33.2,42.6 C33.5,42.1 34,42.1 34.3,42.6 L39,58 Z"
+        silhouette: "M2,56 L12,50 L24,42 L34,36 L40,28 L44,26 L52,23 L60,21 L66,22 L72,18 L78,15 L82,14 L86,16 L92,22 L98,30 L98,56 Z",
+        shade: "M82,14 L86,16 L92,22 L98,30 L98,56 L86,56 L84,34 Z",
+        snow: "M40,28 L44,26 L52,23 L60,21 L66,22 L72,18 L78,15 L82,14 L86,16 L92,22 L98,30 L98,40 L90,36 L84,42 L76,34 L68,40 L60,32 L52,36 L46,30 Z",
+        front: "M76,56 L83,40 L88,28 L91,22 L94,28 L98,36 L98,56 Z"
     )
 
     static let kilimanjaro = PeakArt(
-        silhouette: "M2,58 C14,54.5 22,45 30,35 C34,30 38,26 44,24.8 C50,23.8 60,23.8 66,24.8 C71,25.6 74,27.4 76.5,31 C80.5,37 84.5,44.5 90,50.5 C93,53.5 95.5,56 98,58 Z",
-        shade: "M64,0 L64,23 C68,34 71,46 72,60 L100,60 L100,0 Z",
-        snow: "M36,0 L74,0 L74,27.4 Q70.5,27 69.5,30 Q68.2,27.4 64,27.8 Q61.6,28 60.6,31 Q59.4,28.2 55.5,28.4 Q52.4,28.6 51.4,30.6 Q50.2,28 46.4,28 Q44,28.2 43,30.2 Q41.8,27.6 36,27.8 Z",
-        front: "M64,58 C69,52 72.5,46.5 75.5,41.5 L77.6,37.4 C77.9,36.8 78.4,36.8 78.7,37.4 L79.8,39.6 L81.6,34.4 C81.9,33.7 82.5,33.7 82.8,34.4 L84.4,38.6 L85.6,36.8 C85.9,36.4 86.4,36.4 86.7,36.8 L88.6,41.6 C91.5,47 94.8,53 98,58 Z"
+        silhouette: "M2,56 L10,53 L18,48 L23,42 L26,38 L28,36 L30,37.5 L32,36.5 L35,40 L40,42 L48,42 L55,39 L62,32 L67,25 L70,21 L74,20 L78,19 L82,20 L86,21 L90,27 L95,35 L98,40 L98,56 Z",
+        shade: "M78,19 L82,20 L86,21 L90,27 L95,35 L98,40 L98,56 L84,56 L80,36 Z M28,36 L30,37.5 L32,36.5 L35,40 L40,42 L40,56 L30,56 Z",
+        snow: "M67,25 L70,21 L74,20 L78,19 L82,20 L86,21 L89,25 L86,24 L84,28 L81,23 L78,29 L75,23 L72,27 L70,24 Z"
     )
 
     static let aconcagua = PeakArt(
-        silhouette: "M2,58 C12,52 20,44 27,35.5 C31,30 35,22 39,17 C40.4,15.2 42.4,14.6 44,15.6 C46,16.9 47.6,19.6 49.6,20.1 C51.6,20.6 53.6,18.6 55.6,18.3 C57.6,18 59.2,19.6 61.2,22.2 C68,31 78,42 88,50 C92,53 95,56 98,58 Z",
-        shade: "M43,0 L43,14 C47,28 50,44 50,60 L100,60 L100,0 Z",
-        snow: "M28,0 L70,0 L70,25 Q66,23.6 64,27 Q61,22.8 58,26 Q55,22.6 52,26.4 Q49,22.4 46,25.6 Q43,21.8 40,25 Q36,21.6 33,24.6 Q30,23 28,24 Z M60,21 C66,28 72,36 78,44 C76.6,44.8 75,44.6 74,43.6 C68.6,36.6 63.6,30.4 58,24 Z"
+        silhouette: "M4,56 L14,44 L22,36 L30,28 L38,22 L44,19 L47,18 L52,20 L58,21 L64,20 L72,19 L78,18.5 L82,20 L87,26 L93,34 L98,40 L98,56 Z",
+        shade: "M78,18.5 L82,20 L87,26 L93,34 L98,40 L98,56 L80,56 L78,36 Z",
+        snow: "M38,22 L44,19 L47,18 L52,20 L58,21 L64,20 L72,19 L78,18.5 L82,20 L87,26 L84,31 L79,29 L74,35 L68,31 L62,37 L56,32 L50,38 L45,31 L41,29 Z"
     )
 
     static let everest = PeakArt(
-        silhouette: "M2,58 C12,53 20,46.5 28,40.5 C33,36.5 36,33 39,28 C42.2,22.4 45.2,14.6 48.2,8.2 C48.9,6.8 50.1,6.8 50.8,8.2 C53.8,14.4 57,20.2 61,25.2 C63,27.6 65,28.6 67,28.1 C69,27.6 70.8,24.4 72.8,21.8 C73.6,20.8 74.6,20.8 75.4,21.8 C79.6,28 85.6,39.6 91.6,49.6 C93.6,52.8 95.8,55.6 98,58 Z",
-        shade: "M50,0 L50,7 C53,24 55,42 54,60 L100,60 L100,0 Z",
-        snow: "M36,0 L64,0 L64,24 Q60.6,21.4 58.6,25.4 Q56.4,19.4 54,24.6 Q51.8,17.4 49.6,22.6 Q47.4,18 45.2,23.4 Q42.8,20.4 40.4,24.6 Q38,22.8 36,24 Z M69,0 L82,0 L82,27.5 Q79,25 77.4,28.6 Q75.8,24.2 73.8,27.6 Q72.2,25.4 69,27 Z",
-        plume: "M51,8.2 C57,5.6 66,4.8 78,6.4 C70,7.6 61,9 52.4,10.4 Z"
+        silhouette: "M2,56 L14,50 L24,44 L32,38 L40,32 L48,28 L56,25 L62,22 L66,18 L69,15 L71,11 L74,16 L78,22 L84,29 L90,33 L98,33 L98,56 Z",
+        shade: "M71,11 L74,16 L78,22 L84,29 L90,33 L98,33 L98,56 L78,56 L74,34 Z",
+        snow: "M40,32 L48,28 L56,25 L62,22 L66,18 L69,15 L71,11 L74,16 L78,22 L84,29 L80,31 L76,26 L72,32 L68,24 L62,30 L54,29 L46,34 Z",
+        front: "M30,56 L38,46 L52,40 L68,31 L80,40 L92,50 L96,56 Z"
     )
 
     static let olympusMons = PeakArt(
-        silhouette: "M2,58 L3.6,52.4 C4.1,50.8 5.6,49.6 8.2,49.1 C22,46.4 34,38.6 42,33 C44,31.6 45.6,31 47.2,31.2 L48.6,32.4 L51.4,32.4 L52.8,31.2 C54.4,31 56,31.6 58,33 C66,38.6 78,46.4 91.8,49.1 C94.4,49.6 95.9,50.8 96.4,52.4 L98,58 Z",
-        shade: "M51,0 L51,31 C55,40 57,50 58,60 L100,60 L100,0 Z",
-        moons: [
-            CGRect(x: 77.8, y: 15.8, width: 4.4, height: 4.4),
-            CGRect(x: 87.6, y: 9.6, width: 2.8, height: 2.8),
-        ],
+        silhouette: "M2,56 L3,51 L6,47 L14,45 L28,40 L40,35.5 L46,33.5 L48,35.5 L56,35.5 L58,33.5 L64,35.5 L76,40 L90,45 L96,47 L98,51 L99,56 Z",
+        shade: "M52,35.5 L56,35.5 L58,33.5 L64,35.5 L76,40 L90,45 L96,47 L98,51 L99,56 L56,56 Z",
+        moons: [CGRect(x: 20.4, y: 20.4, width: 3.2, height: 3.2), CGRect(x: 28.9, y: 15.9, width: 2.2, height: 2.2)],
         isMars: true
     )
 }
@@ -91,7 +88,6 @@ struct PeakShapes: Sendable {
     let shade: Path
     let snow: Path?
     let front: Path?
-    let plume: Path?
     let moons: [CGRect]
     let isMars: Bool
     /// The top of the silhouette, where the climb's fill ends.
@@ -102,13 +98,37 @@ struct PeakShapes: Sendable {
         shade = SVGPath.path(art.shade)
         snow = art.snow.map(SVGPath.path)
         front = art.front.map(SVGPath.path)
-        plume = art.plume.map(SVGPath.path)
         moons = art.moons
         isMars = art.isMars
         summitY = silhouette.cgPath.boundingBoxOfPath.minY
     }
 
     static let all: [PeakShapes] = PeakArt.all.map(PeakShapes.init)
+
+    /// The hatching of a shaded side: loose strokes leaning the same way,
+    /// none quite the length of the next. Clipped to each peak's shade.
+    static let hatch: Path = {
+        var path = Path()
+        for x in stride(from: -30, to: 100, by: 4) {
+            // Swift's remainder keeps the sign, so fold it back to 0 and up.
+            let a = CGFloat(((x % 3) + 3) % 3)
+            let b = CGFloat(((x % 5) + 5) % 5)
+            let c = CGFloat(((x % 4) + 4) % 4)
+            path.move(to: CGPoint(x: CGFloat(x), y: 58 - a))
+            path.addLine(to: CGPoint(x: CGFloat(x) + 30 + b, y: 4 + c))
+        }
+        return path
+    }()
+
+    /// The ground under every peak, drawn in one stroke.
+    static let groundLine: Path = {
+        var path = Path()
+        path.addLines([CGPoint(x: 0, y: 56.5), CGPoint(x: 24, y: 55.9), CGPoint(x: 62, y: 56.4), CGPoint(x: 100, y: 55.8)])
+        return path
+    }()
+
+    /// How far the second pass of the pen lands from the first.
+    static let secondPass = CGSize(width: 0.9, height: 0.7)
 
     /// Where the fill stops for `fraction` of the way up.
     func fillLine(at fraction: Double) -> CGFloat {
@@ -123,9 +143,10 @@ struct PeakPalette: Sendable {
     let rockShade: Color
     let snow: Color
     let snowShade: Color
-    let plume: Color
     let marsRock: Color
     let marsShade: Color
+    /// Around Olympus Mons, and its hatching.
+    let marsOutline: Color
     /// Around an inked peak.
     let outline: Color
     /// A peak not reached yet, in outline only.
@@ -137,9 +158,9 @@ struct PeakPalette: Sendable {
         rockShade: Color(hex: "#46535F"),
         snow: .white,
         snowShade: Color(hex: "#D8E0E8"),
-        plume: Color(hex: "#C5CFD9"),
         marsRock: Color(hex: "#C4683E"),
         marsShade: Color(hex: "#9C4B2B"),
+        marsOutline: Color(hex: "#7E3A20"),
         outline: Color(hex: "#3F4A55"),
         pencil: Color(hex: "#B3A992")
     )
@@ -192,41 +213,62 @@ struct PeakIcon: View {
     private func ink(_ shapes: PeakShapes, scale: CGFloat, in context: GraphicsContext) {
         let rock = shapes.isMars ? palette.marsRock : palette.rock
         let shade = shapes.isMars ? palette.marsShade : palette.rockShade
+        let pen = shapes.isMars ? palette.marsOutline : palette.outline
         let outline = StrokeStyle(lineWidth: Self.line / scale, lineJoin: .round)
 
         context.fill(shapes.silhouette, with: .color(rock))
         var inside = context
         inside.clip(to: shapes.silhouette)
-        inside.fill(shapes.shade, with: .color(shade))
+        // The shaded side is hatched, not filled.
+        var shaded = inside
+        shaded.clip(to: shapes.shade)
+        shaded.stroke(PeakShapes.hatch, with: .color(pen), style: StrokeStyle(lineWidth: 1 / scale, lineCap: .round))
         if let snow = shapes.snow {
             inside.fill(snow, with: .color(palette.snow))
-            var shaded = inside
-            shaded.clip(to: shapes.shade)
             shaded.fill(snow, with: .color(palette.snowShade))
+            inside.stroke(snow, with: .color(pen.opacity(0.7)), style: StrokeStyle(lineWidth: 0.7 / scale, lineJoin: .round))
         }
-        context.stroke(shapes.silhouette, with: .color(palette.outline), style: outline)
+        context.stroke(shapes.silhouette, with: .color(pen), style: outline)
+        secondPass(shapes.silhouette, in: context, color: pen, scale: scale)
         if let front = shapes.front {
             context.fill(front, with: .color(rock))
-            context.stroke(front, with: .color(palette.outline), style: outline)
+            context.stroke(front, with: .color(pen), style: outline)
         }
-        if let plume = shapes.plume {
-            context.fill(plume, with: .color(palette.plume.opacity(0.85)))
-        }
+        context.stroke(PeakShapes.groundLine, with: .color(pen), style: StrokeStyle(lineWidth: 0.9 / scale, lineCap: .round))
         for moon in shapes.moons {
             let disc = Path(ellipseIn: moon)
             context.fill(disc, with: .color(shade))
-            context.stroke(disc, with: .color(palette.outline), style: StrokeStyle(lineWidth: 1 / scale))
+            context.stroke(disc, with: .color(pen), style: StrokeStyle(lineWidth: 1 / scale))
         }
     }
 
     private func pencil(_ shapes: PeakShapes, scale: CGFloat, in context: GraphicsContext) {
         let line = StrokeStyle(lineWidth: Self.line / scale, lineJoin: .round)
-        context.stroke(shapes.silhouette, with: .color(palette.pencil), style: line)
+        context.stroke(PeakShapes.groundLine, with: .color(palette.pencil), style: StrokeStyle(lineWidth: 0.9 / scale, lineCap: .round))
+        // The peak stops where a nearer one stands in front of it.
+        var behind = context
+        if let front = shapes.front {
+            behind.clip(to: front, options: .inverse)
+        }
+        secondPass(shapes.silhouette, in: behind, color: palette.pencil, scale: scale)
+        behind.stroke(shapes.silhouette, with: .color(palette.pencil), style: line)
+        if let snow = shapes.snow {
+            var inside = behind
+            inside.clip(to: shapes.silhouette)
+            inside.stroke(snow, with: .color(palette.pencil), style: line)
+        }
         if let front = shapes.front {
             context.stroke(front, with: .color(palette.pencil), style: line)
         }
         for moon in shapes.moons {
             context.stroke(Path(ellipseIn: moon), with: .color(palette.pencil), style: StrokeStyle(lineWidth: 1 / scale))
         }
+    }
+
+    /// The outline gone over again, a little off the first line and fainter.
+    private func secondPass(_ path: Path, in context: GraphicsContext, color: Color, scale: CGFloat) {
+        var second = context
+        second.translateBy(x: PeakShapes.secondPass.width, y: PeakShapes.secondPass.height)
+        second.stroke(path, with: .color(color.opacity(0.5)), style: StrokeStyle(lineWidth: 0.8 / scale, lineJoin: .round))
     }
 }

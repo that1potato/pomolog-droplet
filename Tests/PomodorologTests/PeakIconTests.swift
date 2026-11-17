@@ -50,7 +50,7 @@ import Testing
             #expect(!shapes.shade.isEmpty)
             #expect(box.contains(outline))
             #expect(abs(outline.maxY - PeakArt.ground) < 0.01)
-            for extra in [shapes.snow, shapes.front, shapes.plume].compactMap({ $0 }) {
+            for extra in [shapes.snow, shapes.front].compactMap({ $0 }) {
                 #expect(!extra.isEmpty)
             }
         }
@@ -60,6 +60,14 @@ import Testing
         let tops = PeakShapes.all.map(\.summitY)
         #expect(tops.min() == tops[5])
         #expect(tops.max() == tops[6])
+    }
+
+    @Test func theHatchingAndTheGroundLineStayInsideTheBoxesTheyAreClippedTo() {
+        #expect(!PeakShapes.hatch.isEmpty)
+        let ground = PeakShapes.groundLine.cgPath.boundingBoxOfPath
+        #expect(ground.minX == 0)
+        #expect(ground.maxX == PeakArt.box.width)
+        #expect(abs(ground.midY - PeakArt.ground) < 1)
     }
 
     @Test func theFillRisesFromTheGroundToTheTop() {
