@@ -271,7 +271,7 @@ enum JournalInk {
     static let stickerRing = Color(hex: "#FFFDF8")
 }
 
-/// The journal's type and sizes. Its smallest type is 12pt, the size of the
+/// The journal's type and sizes: handwritten headings over printed names. Its smallest type is 12pt, the size of the
 /// Focus and Break labels on Droppy's own Pomodoro, so nothing in it reads
 /// smaller than Droppy does; the rest is the approved design scaled to match.
 private enum Journal {
@@ -282,6 +282,33 @@ private enum Journal {
     static let rowHeight: CGFloat = 44
     static let icon = CGSize(width: 55, height: 33)
     static let sticker: CGFloat = 25
+
+    /// The keeper's handwriting, for the headings and the day's figure:
+    /// Bradley Hand, which every Mac has. Should one not, the system's serif
+    /// in italic, as the journal was first set.
+    static func hand(_ size: CGFloat) -> Font {
+        JournalType.isInstalled(JournalType.hand)
+            ? .custom(JournalType.hand, fixedSize: size)
+            : .system(size: size, weight: size > heading ? .bold : .regular, design: .serif).italic()
+    }
+
+    /// The printed names of the peaks: Baskerville, semibold. Should a Mac
+    /// not have it, the system's serif.
+    static func print(_ size: CGFloat) -> Font {
+        JournalType.isInstalled(JournalType.print)
+            ? .custom(JournalType.print, fixedSize: size)
+            : .system(size: size, weight: .semibold, design: .serif)
+    }
+}
+
+/// The journal's two typefaces, by the names macOS knows them by.
+enum JournalType {
+    static let hand = "BradleyHandITCTT-Bold"
+    static let print = "Baskerville-SemiBold"
+
+    static func isInstalled(_ name: String) -> Bool {
+        NSFont(name: name, size: 12) != nil
+    }
 }
 
 private struct ExpeditionLogView: View {
@@ -377,7 +404,7 @@ private struct RoutePage: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text("The route")
-                    .font(.system(size: Journal.heading, design: .serif).italic())
+                    .font(Journal.hand(Journal.heading))
                 Spacer(minLength: DroppySpacing.sm)
                 Text(verbatim: model.climbedText)
                     .font(.system(size: Journal.small))
@@ -421,7 +448,7 @@ private struct RouteRowView: View {
                 .frame(width: Journal.icon.width, height: Journal.icon.height)
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: row.peak.name)
-                    .font(.system(size: Journal.name, weight: .semibold, design: .serif))
+                    .font(Journal.print(Journal.name))
                     .foregroundStyle(isAhead ? JournalInk.secondary : JournalInk.text)
                 Text(verbatim: row.detailText)
                     .font(.system(size: Journal.small))
@@ -482,7 +509,7 @@ private struct TodayPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: model.dateText)
-                .font(.system(size: Journal.heading, design: .serif).italic())
+                .font(Journal.hand(Journal.heading))
                 .frame(height: 24, alignment: .top)
 
             Text("Today's climb")
@@ -490,9 +517,7 @@ private struct TodayPage: View {
                 .padding(.top, DroppySpacing.sm)
             HStack(alignment: .firstTextBaseline, spacing: DroppySpacing.sm) {
                 Text(verbatim: model.todayText)
-                    .font(.system(size: Journal.figure, weight: .bold, design: .serif))
-                    .monospacedDigit()
-                    .tracking(-0.4)
+                    .font(Journal.hand(Journal.figure))
                 if let since = model.sinceText {
                     Text(verbatim: since)
                         .foregroundStyle(JournalInk.secondary)

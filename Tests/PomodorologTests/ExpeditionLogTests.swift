@@ -234,4 +234,12 @@ import Testing
         #expect(ClimbGuide.peaksTip.hasPrefix("Ben Nevis \(1345.formatted()) m, Mount Fuji \(3776.formatted()) m, Mont Blanc \(4808.formatted()) m"))
         #expect(ClimbGuide.peaksTip.contains("and Everest \(8849.formatted()) m, then Olympus Mons on Mars, \(21900.formatted()) m."))
     }
+
+    @Test func theJournalsTypefacesAreOnThisMac() {
+        // Both ship with macOS; the journal falls back to the system serif
+        // where one is missing, so this only says the names are spelled right.
+        #expect(JournalType.isInstalled(JournalType.hand))
+        #expect(JournalType.isInstalled(JournalType.print))
+        #expect(!JournalType.isInstalled("No Such Typeface"))
+    }
 }
