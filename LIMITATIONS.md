@@ -163,7 +163,9 @@ Droppy 16.0.1 what a droplet may show while Droppy's own Pomodoro runs.
   each end by 22. So the jar strip shows the jar and the week's count, and
   "Jar filled" and today's count only where they fit. One HUD request serves a
   notch and an island alike, so the summit and sticker cards lay out to the
-  width they get: 344 points on a notch, 208 on an island.
+  width they get: 344 points on a notch, 208 on an island. A card asks for
+  the height its words need on the shape `notchGeometry` reports, so shown on
+  the other shape it cuts its description short.
 
 ## Waiting on a newer Droppy
 

@@ -36,16 +36,11 @@ enum NotchMoment: Equatable, Sendable {
     }
 }
 
-/// A card that grows out of the notch: a tile, what happened, and a button to
-/// where it can be seen.
+/// A card that grows out of the notch: a tile and what happened. It has
+/// nothing to press.
 struct NotchCard: Equatable, Sendable {
     enum Kind: String, Sendable {
         case summit, sticker, welcome
-    }
-
-    enum Action: Equatable, Sendable {
-        /// Opens the expedition log.
-        case expeditionLog
     }
 
     let kind: Kind
@@ -53,17 +48,10 @@ struct NotchCard: Equatable, Sendable {
     let tileHex: String
     let title: String
     let detail: String
-    let action: Action
     /// A peak's own sticker: its tile draws the peak's symbol.
     var peak: Int? = nil
 
     var hudID: String { "pomolog.\(kind.rawValue)" }
-
-    var buttonTitle: String {
-        switch action {
-        case .expeditionLog: "Expedition log"
-        }
-    }
 
     /// The word on the strip the card grows out of.
     var stripText: String {
@@ -118,8 +106,7 @@ enum NotchMoments {
             symbol: "flag.fill",
             tileHex: sticker?.colorHex ?? "#64D2FF",
             title: "Summit: \(summit.peak.name)\(again)",
-            detail: "\(height) m in \(sessions) over \(days). Pick your next climb.",
-            action: .expeditionLog,
+            detail: "\(height)\(Self.unitSpace)m in \(sessions) over \(days). Pick your next climb.",
             peak: summit.peakIndex
         )
     }
@@ -138,7 +125,6 @@ enum NotchMoments {
                 tileHex: first.sticker.colorHex,
                 title: "Found on the way: \(first.sticker.name)",
                 detail: "\(withoutFullStop(first.sticker.rule))\(place). \(found)",
-                action: .expeditionLog,
                 peak: first.sticker.peak
             )
         }
@@ -148,7 +134,6 @@ enum NotchMoments {
             tileHex: first.sticker.colorHex,
             title: "Found on the way: \(stickers.count) stickers",
             detail: "\(list(stickers.map(\.sticker.name)))\(place). \(found)",
-            action: .expeditionLog,
             peak: first.sticker.peak
         )
     }
@@ -165,7 +150,6 @@ enum NotchMoments {
             tileHex: latest.sticker.colorHex,
             title: count == 1 ? "A sticker from your log so far" : "\(count) stickers from your log so far",
             detail: "Found in the sessions you'd already logged. \(left == 0 ? "That's all of them." : "\(left) more to find on the way up.")",
-            action: .expeditionLog,
             peak: latest.sticker.peak
         )
     }
@@ -192,8 +176,11 @@ enum NotchMoments {
     static func whereFound(_ earned: EarnedSticker, climb: Climb) -> String? {
         guard let step = climb.steps.first(where: { $0.recordID == earned.recordID }),
               let peak = step.peakIndex else { return nil }
-        return "at \(SummitWidgetModel.metres(step.after)) m on \(Peaks.all[peak].name)"
+        return "at \(SummitWidgetModel.metres(step.after))\(unitSpace)m on \(Peaks.all[peak].name)"
     }
+
+    /// Between a height and its `m`, so a card never wraps between them.
+    static let unitSpace = "\u{00A0}"
 
     /// `Early bird and Unbroken`, `Early bird, Unbroken and Named it`.
     static func list(_ names: [String]) -> String {
@@ -303,8 +290,6 @@ extension PomodorologDroplet {
     func stopMoments() {
         momentTask?.cancel()
         momentTask = nil
-        actionTask?.cancel()
-        actionTask = nil
         pendingMoments.removeAll()
     }
 
@@ -343,30 +328,14 @@ extension PomodorologDroplet {
                 priority: .normal,
                 accessibilityLabel: "\(card.title). \(card.detail)",
                 isExpanded: true,
-                expandedContentHeight: MomentCard.height(for: card),
+                expandedContentHeight: MomentCard.height(for: card, onNotch: geometry.isHardwareNotch),
                 content: {
                     CardStrip(card: card, housing: housing)
                 },
-                expanded: { [weak self] in
-                    MomentCard(card: card) { self?.perform(card) }
+                expanded: {
+                    MomentCard(card: card)
                 }
             ))
-        }
-    }
-
-    /// The card's button: the HUD goes, then, once its close has settled, the
-    /// shelf opens where the card pointed.
-    private func perform(_ card: NotchCard) {
-        guard let host else { return }
-        host.hud.dismiss(id: card.hudID)
-        actionTask?.cancel()
-        actionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(450))
-            guard !Task.isCancelled, let self else { return }
-            switch card.action {
-            case .expeditionLog:
-                self.openExpeditionLog()
-            }
         }
     }
 }
@@ -454,42 +423,49 @@ private struct StripLayout<Leading: View, Trailing: View>: View {
     }
 }
 
-/// A summit or a sticker: its tile, what happened, and where to look. One
-/// request serves a notch and an island, so the card lays out to the width it
-/// is given: on a notch's 344 points the button sits beside the words, on an
-/// island's 208 it goes under them.
+/// A summit or a sticker: its tile and what happened. The card lays out to
+/// the width it is given: the words beside a large tile on a notch's 344
+/// points, and beside a small one on an island's 208, where they wrap onto
+/// more lines.
 struct MomentCard: View {
-    /// The card's content width on a notch; an island's is 208.
-    static let wideWidth: CGFloat = 344
-    static let tileSize: CGFloat = 44
-    static let narrowTileSize: CGFloat = 28
-    /// What the island's layout needs: a line of title, two of detail and the
-    /// button.
-    static let narrowHeight: CGFloat = 16 + 2 + 30 + 6 + 24 + 2
+    /// One of the card's two compositions, at the content width Droppy gives
+    /// the card on that shape.
+    struct Layout: Equatable {
+        let width: CGFloat
+        let tileSize: CGFloat
+        let spacing: CGFloat
+        let detailLines: Int
+
+        /// The width the title and the description wrap to.
+        var wordsWidth: CGFloat { width - tileSize - spacing }
+
+        static let notch = Layout(width: 344, tileSize: 44, spacing: DroppySpacing.md, detailLines: 3)
+        static let island = Layout(width: 208, tileSize: 28, spacing: DroppySpacing.smd, detailLines: 4)
+
+        /// The notch's on anything wider than an island's card.
+        static func fitting(_ width: CGFloat) -> Layout {
+            width >= 300 ? .notch : .island
+        }
+    }
+
+    /// Droppy's own battery and AirPods cards are this tall, and so is a card
+    /// with a line or two to say.
+    static let shortestHeight = DroppyLiveActivityMetrics.cardContentHeight
+    /// How far a title shrinks to stay on one line: to 12pt, no smaller.
+    static let titleScale: CGFloat = 12 / 13
 
     let card: NotchCard
-    let action: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width >= 300 {
-                HStack(spacing: DroppySpacing.md) {
-                    tile(Self.tileSize)
-                    words(titleLines: 2, detailLines: 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    button
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                HStack(alignment: .top, spacing: DroppySpacing.smd) {
-                    tile(Self.narrowTileSize)
-                    VStack(alignment: .leading, spacing: DroppySpacing.xsm) {
-                        words(titleLines: 1, detailLines: 2)
-                        button
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            let layout = Layout.fitting(proxy.size.width)
+            let wordsWidth = proxy.size.width - layout.tileSize - layout.spacing
+            HStack(alignment: layout == .notch ? .center : .top, spacing: layout.spacing) {
+                tile(layout.tileSize)
+                words(titleLines: Self.titleLines(card.title, width: wordsWidth), detailLines: layout.detailLines)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
 
@@ -509,47 +485,53 @@ struct MomentCard: View {
     }
 
     private func words(titleLines: Int, detailLines: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Self.wordsSpacing) {
             Text(verbatim: card.title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
                 .lineLimit(titleLines)
-                .minimumScaleFactor(titleLines == 1 ? 0.85 : 1)
+                .minimumScaleFactor(titleLines == 1 ? Self.titleScale : 1)
+                // On a card measured for the other shape, the description is
+                // what gets cut short.
+                .layoutPriority(1)
             Text(verbatim: card.detail)
                 .font(.system(size: 12))
                 .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
                 .lineLimit(detailLines)
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var button: some View {
-        Button(card.buttonTitle, action: action)
-            .buttonStyle(DroppyQuietButtonStyle(size: .small))
-            .fixedSize()
+    /// The content height the card asks Droppy for: its words measured on the
+    /// shape the HUD shows on, and never shorter than Droppy's own cards.
+    static func height(for card: NotchCard, onNotch: Bool) -> CGFloat {
+        let layout = onNotch ? Layout.notch : Layout.island
+        let width = layout.wordsWidth
+        let words = measure(card.title, titleFont, width: width, lines: titleLines(card.title, width: width))
+            + wordsSpacing
+            + measure(card.detail, detailFont, width: width, lines: layout.detailLines)
+        return max(shortestHeight, (max(layout.tileSize, words) + 4).rounded(.up))
     }
 
-    /// The content height the card asks Droppy for: its words measured at the
-    /// width they get on a notch, and never shorter than the island's layout
-    /// needs.
-    static func height(for card: NotchCard) -> CGFloat {
-        let wordsWidth = wideWidth - tileSize - 2 * DroppySpacing.md - buttonWidth(card)
-        let words = measure(card.title, .systemFont(ofSize: 13, weight: .semibold), width: wordsWidth)
-            + 2
-            + measure(card.detail, .systemFont(ofSize: 12), width: wordsWidth)
-        return min(140, max(narrowHeight, (max(tileSize, words) + 4).rounded(.up)))
+    /// One line, shrunk to 12pt if it has to be, when the title fits that
+    /// way; two at full size when it doesn't.
+    static func titleLines(_ title: String, width: CGFloat) -> Int {
+        measureWidth(title, titleFont) * titleScale <= width ? 1 : 2
     }
 
-    private static func buttonWidth(_ card: NotchCard) -> CGFloat {
-        measureWidth(card.buttonTitle, .systemFont(ofSize: 12, weight: .medium)) + 28
-    }
+    private static let wordsSpacing: CGFloat = 2
+    private static var titleFont: NSFont { .systemFont(ofSize: 13, weight: .semibold) }
+    private static var detailFont: NSFont { .systemFont(ofSize: 12) }
 
-    private static func measure(_ text: String, _ font: NSFont, width: CGFloat) -> CGFloat {
-        let rect = NSAttributedString(string: text, attributes: [.font: font]).boundingRect(
-            with: CGSize(width: max(width, 1), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return rect.height.rounded(.up)
+    /// The height `text` wraps to at `width`, up to `lines` lines.
+    private static func measure(_ text: String, _ font: NSFont, width: CGFloat, lines: Int) -> CGFloat {
+        func height(_ text: String, width: CGFloat) -> CGFloat {
+            NSAttributedString(string: text, attributes: [.font: font]).boundingRect(
+                with: CGSize(width: max(width, 1), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height.rounded(.up)
+        }
+        let line = height("A", width: .greatestFiniteMagnitude)
+        return min(height(text, width: width), CGFloat(lines) * line)
     }
 
     private static func measureWidth(_ text: String, _ font: NSFont) -> CGFloat {

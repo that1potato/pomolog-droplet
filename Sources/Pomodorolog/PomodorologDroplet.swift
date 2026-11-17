@@ -71,11 +71,10 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     private var locateAttempts = 0
     private var cancellables = Set<AnyCancellable>()
 
-    /// Notch moments waiting their turn, the wait before the next, and a card
-    /// button's delayed action (NotchMoments.swift).
+    /// Notch moments waiting their turn, and the wait before the next
+    /// (NotchMoments.swift).
     var pendingMoments: [PendingMoment] = []
     var momentTask: Task<Void, Never>?
-    var actionTask: Task<Void, Never>?
 
     // MARK: Lifecycle
 

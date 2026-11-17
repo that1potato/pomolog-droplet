@@ -196,10 +196,7 @@ import Testing
         let fuji = try #require(rewards.climb.summits.last)
         let card = NotchMoments.summitCard(fuji)
         #expect(card.title == "Summit: Mount Fuji")
-        #expect(card.detail == "\(3776.formatted()) m in 14 sessions over 3 days. Pick your next climb.")
-        // Nothing picks for you: the button opens the log, where you choose.
-        #expect(card.action == .expeditionLog)
-        #expect(card.buttonTitle == "Expedition log")
+        #expect(card.detail == "\(3776.formatted())\u{00A0}m in 14 sessions over 3 days. Pick your next climb.")
         // On the peak's own sticker, its symbol on the tile.
         #expect(card.tileHex == Stickers.mountFuji.colorHex)
         #expect(card.peak == 1)
@@ -220,8 +217,7 @@ import Testing
         let card = try #require(NotchMoments.stickerCard([earlyBird], rewards: rewards))
         #expect(card.title == "Found on the way: Early bird")
         // Sunday's first focus, from 550 m to 800 m up Mont Blanc.
-        #expect(card.detail == "A tomato finished between 5:00 and 8:00, at 800 m on Mont Blanc. 14 of 30 found.")
-        #expect(card.action == .expeditionLog)
+        #expect(card.detail == "A tomato finished between 5:00 and 8:00, at 800\u{00A0}m on Mont Blanc. 14 of 30 found.")
         #expect(card.tileHex == Stickers.earlyBird.colorHex)
         #expect(card.peak == nil)
     }
@@ -285,15 +281,24 @@ import Testing
         #expect(samples[2] == .jar(today: 1, week: 5))
     }
 
-    @Test func aCardIsTallEnoughForItsWords() throws {
-        let earlyBird = try #require(rewards.stickers.first { $0.sticker.id == "early-bird" })
-        let card = try #require(NotchMoments.stickerCard([earlyBird], rewards: rewards))
-        let height = MomentCard.height(for: card)
-        // Room for the island's layout, and for every line on a notch.
-        #expect(height >= MomentCard.narrowHeight)
-        #expect(height <= 140)
+    @Test func aCardIsAsTallAsItsWordsOnTheShapeItShowsOn() throws {
         let fuji = NotchMoments.summitCard(try #require(rewards.climb.summits.last))
-        #expect(MomentCard.height(for: fuji) <= height)
+        let earlyBird = try #require(rewards.stickers.first { $0.sticker.id == "early-bird" })
+        let sticker = try #require(NotchMoments.stickerCard([earlyBird], rewards: rewards))
+        // A line of title and two of description: as tall as Droppy's own
+        // cards, on either shape.
+        #expect(MomentCard.height(for: fuji, onNotch: true) == MomentCard.shortestHeight)
+        #expect(MomentCard.height(for: fuji, onNotch: false) == MomentCard.shortestHeight)
+        #expect(MomentCard.height(for: sticker, onNotch: true) == MomentCard.shortestHeight)
+        // The island's narrower words take a third line.
+        #expect(MomentCard.height(for: sticker, onNotch: false) > MomentCard.shortestHeight)
+    }
+
+    @Test func aTitleShrinksToTwelvePointsToStayOnOneLineAndWrapsPastThat() {
+        let island = MomentCard.Layout.island.wordsWidth
+        #expect(MomentCard.titleLines("Found on the way: Early bird", width: island) == 1)
+        #expect(MomentCard.titleLines("Found on the way: Weekend warrior", width: island) == 2)
+        #expect(MomentCard.titleLines("Found on the way: Weekend warrior", width: MomentCard.Layout.notch.wordsWidth) == 1)
     }
 }
 
