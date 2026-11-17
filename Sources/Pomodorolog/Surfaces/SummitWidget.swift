@@ -2,9 +2,9 @@
 //  SummitWidget.swift
 //  Pomodorolog
 //
-//  The summit on the shelf: the peak you're climbing, the trail with a tomato
-//  for each focus, and how far there is to go. Alone it shows the whole scene;
-//  sharing a row it shows the trail, the climber and a percentage.
+//  The summit on the shelf: a picture of the peak you're climbing across the
+//  whole tile, its trail with a tomato for each focus, and the numbers in its
+//  sky. Sharing a row it closes in on the peak and shows a percentage.
 //
 
 import DroppyKit
@@ -136,27 +136,34 @@ private struct SummitWidget: View {
                 live: droplet.liveStep(at: timeline.date),
                 logging: droplet.hookStatus == .logging || droplet.isShowingSample
             )
-            VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+            // Narrow, alone or in a row: the same picture closed in on the peak.
+            let isCompact = context.isCompact || context.availableSize.width < 430
+            // The mountain is the widget: a picture across the whole tile,
+            // which Droppy's card corner clips, with the numbers in its sky.
+            VStack(alignment: .leading, spacing: 0) {
                 header(model)
-                if context.isCompact {
-                    MountainSceneView(scene: model.scene, showsMarkers: false)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    compactFooter(model)
+                if isCompact {
+                    compactStats(model)
+                        .padding(.top, DroppySpacing.xs)
                 } else {
-                    // The numbers on the left, the mountain on the right.
-                    HStack(alignment: .top, spacing: DroppySpacing.md) {
-                        statColumn(model)
-                            .frame(width: 175, alignment: .topLeading)
-                            .frame(maxHeight: .infinity, alignment: .topLeading)
-                        MountainSceneView(scene: model.scene, showsMarkers: true)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    }
+                    statColumn(model)
+                        .padding(.top, DroppySpacing.xs)
                 }
             }
             .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
-            .padding(context.contentInsets)
+            .padding(DroppySpacing.mdl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background {
+                MountainSceneView(scene: model.scene, isCompact: isCompact)
+                    .clipShape(RoundedRectangle(cornerRadius: artCornerRadius, style: .continuous))
+            }
         }
+    }
+
+    /// No card corner clips a widget alone on the island, so the picture
+    /// rounds itself there.
+    private var artCornerRadius: CGFloat {
+        context.contentInsets.leading == 0 ? DroppyShellMetrics.shelfFullBleedCornerRadius : 0
     }
 
     private func header(_ model: SummitWidgetModel) -> some View {
@@ -177,10 +184,10 @@ private struct SummitWidget: View {
         }
     }
 
-    /// The full widget's left column: how high you are, today's tomatoes, and
-    /// how far there is to go.
+    /// The full widget's numbers, set in the sky over the foothills: how
+    /// high you are, today's tomatoes, and how far there is to go.
     private func statColumn(_ model: SummitWidgetModel) -> some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.xs) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(verbatim: model.climbedText)
                     .font(.system(size: 37, weight: .bold))
@@ -191,20 +198,21 @@ private struct SummitWidget: View {
                     .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
             }
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .frame(height: 38)
             Text(verbatim: model.ofText)
                 .font(.system(size: 12, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
                 .lineLimit(1)
             todayRow(model)
-                .padding(.top, DroppySpacing.sm)
+                .padding(.top, DroppySpacing.xsm)
             Text(verbatim: model.statusText)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                .lineLimit(2)
-                .padding(.top, DroppySpacing.smd)
+                .lineLimit(1)
+                .padding(.top, DroppySpacing.xs)
         }
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -229,7 +237,8 @@ private struct SummitWidget: View {
         }
     }
 
-    private func compactFooter(_ model: SummitWidgetModel) -> some View {
+    /// The half-width numbers, in the sky beside the peak.
+    private func compactStats(_ model: SummitWidgetModel) -> some View {
         VStack(alignment: .leading, spacing: DroppySpacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DroppySpacing.xsm) {
                 Text(verbatim: model.percentText)
@@ -243,8 +252,8 @@ private struct SummitWidget: View {
                 TomatoGlyph()
                 Text(verbatim: "\(model.todayTomatoes) today")
                     .monospacedDigit()
-                Spacer(minLength: DroppySpacing.sm)
                 JarGlyph()
+                    .padding(.leading, DroppySpacing.xs)
                 Text(verbatim: "\(model.todayJars)")
                     .monospacedDigit()
             }

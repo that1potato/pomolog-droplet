@@ -2,42 +2,91 @@
 //  SummitScene.swift
 //  Pomodorolog
 //
-//  The mountain on the summit widget. Where the trail runs and what is drawn
-//  on it are plain values worked out from the rewards, so they can be tested;
-//  the Canvas only paints them.
+//  The mountain on the summit widget. Each peak has its own picture and its
+//  own trail (PeakScenes.swift); where the climber stands and what is drawn
+//  on the trail are plain values worked out from the rewards, so they can be
+//  tested. The Canvas only paints them.
 //
 
+import DroppyKit
 import SwiftUI
 
-/// The trail up the mountain, in the scene's own 424 × 140 space. It zigzags
-/// at an even slope with a short hairpin at each turn, so how high the climber
-/// stands in the picture is how far up the peak they are.
-enum TrailGeometry {
-    static let size = CGSize(width: 424, height: 140)
-    static let waypoints: [CGPoint] = [
-        CGPoint(x: 130, y: 134), CGPoint(x: 330, y: 90), CGPoint(x: 330, y: 84),
-        CGPoint(x: 190.5, y: 53.3), CGPoint(x: 190.5, y: 47.3), CGPoint(x: 240, y: 14),
-    ]
-    static var foot: CGPoint { waypoints[0] }
-    static var top: CGPoint { waypoints[waypoints.count - 1] }
+/// The line a trail follows up its peak, in the scene's space. How high the
+/// climber stands in the picture is how far up the peak they are.
+struct Trail: Equatable {
+    let points: [CGPoint]
 
-    /// The point `fraction` of the way up, by height.
-    static func point(at fraction: Double) -> CGPoint {
-        let clamped = min(max(fraction, 0), 1)
-        let y = foot.y - CGFloat(clamped) * (foot.y - top.y)
-        for (a, b) in zip(waypoints, waypoints.dropFirst()) where a.y >= y && y >= b.y {
-            let t = a.y == b.y ? 0 : (a.y - y) / (a.y - b.y)
-            return CGPoint(x: a.x + (b.x - a.x) * t, y: y)
-        }
-        return top
+    var foot: CGPoint { points[0] }
+    var top: CGPoint { points[points.count - 1] }
+
+    /// The point `fraction` of the way up, by height: the first place the
+    /// line reaches that height.
+    func point(at fraction: Double) -> CGPoint {
+        locate(fraction).point
     }
 
-    /// The trail from one fraction of the way up to another, its corners
+    /// The line from one fraction of the way up to another, its bends
     /// included.
-    static func points(from start: Double, to end: Double) -> [CGPoint] {
-        let first = point(at: start)
-        let last = point(at: end)
-        return [first] + waypoints.filter { $0.y < first.y && $0.y > last.y } + [last]
+    func points(from start: Double, to end: Double) -> [CGPoint] {
+        let first = locate(start)
+        let last = locate(end)
+        guard last.index > first.index else { return [first.point, last.point] }
+        return [first.point] + points[first.index..<last.index] + [last.point]
+    }
+
+    /// The point at `fraction`, and the index of the first sample after it.
+    private func locate(_ fraction: Double) -> (index: Int, point: CGPoint) {
+        let clamped = min(max(fraction, 0), 1)
+        if clamped <= 0 { return (1, foot) }
+        if clamped >= 1 { return (points.count - 1, top) }
+        let y = foot.y - CGFloat(clamped) * (foot.y - top.y)
+        for index in 1..<points.count {
+            let a = points[index - 1]
+            let b = points[index]
+            if a.y >= y, y >= b.y {
+                let t = a.y == b.y ? 0 : (a.y - y) / (a.y - b.y)
+                return (index, CGPoint(x: a.x + (b.x - a.x) * t, y: y))
+            }
+        }
+        return (points.count - 1, top)
+    }
+}
+
+/// A peak's picture: flat planes from the back to the front, its trail and
+/// the huts along it, all in `PeakScenes.size`.
+struct PeakSceneArt {
+    struct Plane {
+        let color: Color
+        let points: [CGPoint]
+    }
+
+    let planes: [Plane]
+    let trail: Trail
+    let huts: [CGPoint]
+    /// Where the height is written, from the top of the trail.
+    let labelOffset: CGSize
+
+    /// Planes as a colour, an opacity and `x,y x,y` corners; the trail and
+    /// the huts as `x,y x,y` too.
+    init(planes: [(String, Double, String)], trail: String, huts: String, labelOffset: CGSize) {
+        self.planes = planes.map { Plane(color: Color(hex: $0.0).opacity($0.1), points: PeakScenes.points($0.2)) }
+        self.trail = Trail(points: PeakScenes.points(trail))
+        self.huts = PeakScenes.points(huts)
+        self.labelOffset = labelOffset
+    }
+}
+
+enum PeakScenes {
+    /// The space every scene is drawn in: the full widget, less its edges.
+    static let size = CGSize(width: 464, height: 216)
+    /// How much of that width the half-width widget shows.
+    static let compactWidth: CGFloat = 232
+
+    static func points(_ text: String) -> [CGPoint] {
+        text.split(separator: " ").compactMap { pair in
+            let parts = pair.split(separator: ",").compactMap { Double($0) }
+            return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+        }
     }
 }
 
@@ -71,7 +120,17 @@ struct SummitScene: Equatable {
     let markers: [Marker]
 
     var peak: Peak { Peaks.all[peakIndex] }
+    var art: PeakSceneArt { PeakScenes.all[peakIndex] }
     var fraction: Double { min(max(climbed / peak.height, 0), 1) }
+
+    /// A scene set by hand, for previews and tests.
+    init(peakIndex: Int, ascent: Int = 1, climbed: Double, stretches: [Stretch] = [], markers: [Marker] = []) {
+        self.peakIndex = peakIndex
+        self.ascent = ascent
+        self.climbed = climbed
+        self.stretches = stretches
+        self.markers = markers
+    }
 
     /// `live` is the running focus's share so far, drawn like today's.
     init(rewards: RewardsSnapshot, today: String, live: ClimbStep? = nil) {
@@ -116,56 +175,49 @@ struct SummitScene: Equatable {
     }
 }
 
-/// The scene's colours. Droppy's shelf is black in both appearances.
+/// The scene's colours. Droppy's shelf is black in both appearances; each
+/// peak's own greys are in PeakScenes.swift.
 enum SummitInk {
     static let tomato = Color(hex: "#FF4F45")
     static let leaf = Color(hex: "#34C759")
     static let lid = Color(hex: "#8E8E93")
     static let bonus = Color(hex: "#FFB340")
-    static let rock = Color(hex: "#2C2C2E")
-    static let rockBack = Color(hex: "#1A1A1C")
-    static let snow = Color(hex: "#5E5E63")
     static let flag = Color(hex: "#64D2FF")
     static let pole = Color(hex: "#D1D1D6")
     static let ring = Color(hex: "#1C1C1E")
+    static let hut = Color(hex: "#E5E5EA")
 }
 
-/// The mountain in silhouette, in the trail's 424 × 140 space.
-private enum MountainArt {
-    static let back = polygon("0,140 0,96 40,80 70,92 110,60 140,74 170,66 200,84 236,58 262,70 300,52 330,66 370,58 400,74 424,68 424,140")
-    static let main = polygon("0,140 20,128 60,118 96,100 130,84 160,62 190,44 214,30 240,14 266,30 292,46 318,56 350,80 390,98 424,110 424,140")
-    static let snow = polygon("226,22.6 240,14 254,22.6 250,24.2 246,22.4 242,26 238,22.6 234,25 230,23.2")
-
-    private static func polygon(_ text: String) -> [CGPoint] {
-        text.split(separator: " ").compactMap { pair in
-            let parts = pair.split(separator: ",").compactMap { Double($0) }
-            return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
-        }
-    }
-}
-
-/// Paints a `SummitScene`. Without markers it is the half-width version: the
-/// trail and the climber, which stay readable when the widget shares a row.
+/// Paints a `SummitScene` across the whole widget, its foot on the bottom
+/// edge. The half-width version closes in on the peak and leaves out the
+/// tomatoes and the height.
 struct MountainSceneView: View {
     let scene: SummitScene
-    var showsMarkers = true
+    var isCompact = false
 
-    /// The part of the 424 × 140 scene shown. At half width it closes in on
-    /// the mountain, so the trail draws larger.
-    private var viewport: CGRect {
-        showsMarkers
-            ? CGRect(origin: .zero, size: TrailGeometry.size)
-            : CGRect(x: 96, y: 0, width: 288, height: TrailGeometry.size.height)
+    /// The part of the scene shown, across its full height. At half width it
+    /// frames the climber and the summit together, so it closes in on the
+    /// peak as the climb goes on.
+    private var viewport: (minX: CGFloat, width: CGFloat) {
+        let full = PeakScenes.size.width
+        guard isCompact else { return (0, full) }
+        let trail = scene.art.trail
+        let you = trail.point(at: scene.fraction).x
+        let low = min(you, trail.top.x) - 28
+        let high = max(you, trail.top.x) + 28
+        let width = min(max(high - low, PeakScenes.compactWidth), full)
+        let minX = min(max((low + high) / 2 - width / 2, 0), full - width)
+        return (minX, width)
     }
 
     var body: some View {
+        let art = scene.art
+        let trail = art.trail
         let viewport = viewport
+        let isCompact = isCompact
         Canvas { context, size in
-            let scale = min(size.width / viewport.width, size.height / viewport.height)
-            let offset = CGPoint(
-                x: (size.width - viewport.width * scale) / 2 - viewport.minX * scale,
-                y: size.height - viewport.height * scale - viewport.minY * scale
-            )
+            let scale = size.width / viewport.width
+            let offset = CGPoint(x: -viewport.minX * scale, y: size.height - PeakScenes.size.height * scale)
             func map(_ point: CGPoint) -> CGPoint {
                 CGPoint(x: offset.x + point.x * scale, y: offset.y + point.y * scale)
             }
@@ -175,60 +227,78 @@ struct MountainSceneView: View {
                 if closed { path.closeSubpath() }
                 return path
             }
+            func line(_ width: CGFloat, dash: [CGFloat] = []) -> StrokeStyle {
+                StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: dash)
+            }
 
-            context.fill(shape(MountainArt.back, closed: true), with: .color(SummitInk.rockBack))
-            context.fill(shape(MountainArt.main, closed: true), with: .color(SummitInk.rock))
-            context.fill(shape(MountainArt.snow, closed: true), with: .color(SummitInk.snow))
+            for plane in art.planes {
+                context.fill(shape(plane.points, closed: true), with: .color(plane.color))
+            }
 
+            // A dark edge under the whole trail keeps it readable on snow.
+            context.stroke(shape(trail.points, closed: false), with: .color(SummitInk.ring), style: line(4))
+            if scene.fraction < 1 {
+                context.stroke(
+                    shape(trail.points(from: scene.fraction, to: 1), closed: false),
+                    with: .color(.white.opacity(0.65)),
+                    style: line(2, dash: [2, 4])
+                )
+            }
             for stretch in scene.stretches {
                 context.stroke(
-                    shape(TrailGeometry.points(from: stretch.from, to: stretch.to), closed: false),
+                    shape(trail.points(from: stretch.from, to: stretch.to), closed: false),
                     with: .color(color(stretch.ink)),
                     style: StrokeStyle(lineWidth: width(stretch.ink), lineCap: .butt, lineJoin: .round)
                 )
             }
-            if scene.fraction < 1 {
-                context.stroke(
-                    shape(TrailGeometry.points(from: scene.fraction, to: 1), closed: false),
-                    with: .color(.white.opacity(0.36)),
-                    style: StrokeStyle(lineWidth: showsMarkers ? 2 : 1.6, lineCap: .round, lineJoin: .round, dash: [2, 4])
-                )
+
+            for hut in art.huts {
+                let at = map(hut)
+                let box = Path(CGRect(x: at.x - 1.6, y: at.y - 1.6, width: 3.2, height: 3.2))
+                context.fill(box, with: .color(SummitInk.hut))
+                context.stroke(box, with: .color(SummitInk.ring), lineWidth: 0.8)
             }
 
             // The flag on the top, and its height.
-            let top = map(TrailGeometry.top)
-            let flagTop = CGPoint(x: top.x, y: top.y - 11 * scale)
+            let top = map(trail.top)
+            let flagTop = CGPoint(x: top.x, y: top.y - 11)
             var pole = Path()
             pole.move(to: top)
             pole.addLine(to: flagTop)
             context.stroke(pole, with: .color(SummitInk.pole), lineWidth: 1.2)
             var flag = Path()
             flag.move(to: flagTop)
-            flag.addLine(to: CGPoint(x: top.x + 10 * scale, y: top.y - 8.5 * scale))
-            flag.addLine(to: CGPoint(x: top.x, y: top.y - 6 * scale))
+            flag.addLine(to: CGPoint(x: top.x + 10, y: top.y - 8.5))
+            flag.addLine(to: CGPoint(x: top.x, y: top.y - 6))
             flag.closeSubpath()
             context.fill(flag, with: .color(SummitInk.flag))
 
-            if showsMarkers {
+            if !isCompact {
                 let height = Text(verbatim: "\(Int(scene.peak.height).formatted()) m")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.5))
-                context.draw(height, at: CGPoint(x: top.x + 15 * scale, y: top.y - 8 * scale), anchor: .leading)
+                let y = top.y + art.labelOffset.height - 4
+                // Beside the flag, or before the pole where the edge is near.
+                let label = context.resolve(height)
+                let fits = top.x + art.labelOffset.width + label.measure(in: size).width <= size.width - DroppySpacing.sm
+                if fits {
+                    context.draw(label, at: CGPoint(x: top.x + art.labelOffset.width, y: y), anchor: .leading)
+                } else {
+                    context.draw(label, at: CGPoint(x: top.x - DroppySpacing.xsm, y: y), anchor: .trailing)
+                }
 
                 for marker in scene.markers {
-                    draw(marker, at: map(TrailGeometry.point(at: marker.at)), scale: scale, in: &context)
+                    draw(marker, at: map(trail.point(at: marker.at)), in: &context)
                 }
             }
 
             // The climber.
-            let you = map(TrailGeometry.point(at: scene.fraction))
-            let radius: CGFloat = showsMarkers ? 5 : 4
+            let you = map(trail.point(at: scene.fraction))
+            let radius: CGFloat = isCompact ? 4 : 5
             let disc = Path(ellipseIn: CGRect(x: you.x - radius, y: you.y - radius, width: radius * 2, height: radius * 2))
             context.fill(disc, with: .color(.white))
-            context.stroke(disc, with: .color(SummitInk.tomato), lineWidth: showsMarkers ? 2.6 : 2.2)
+            context.stroke(disc, with: .color(SummitInk.tomato), lineWidth: isCompact ? 2.2 : 2.6)
         }
-        .aspectRatio(viewport.width / viewport.height, contentMode: .fit)
-        .clipped()
         .accessibilityElement()
         .accessibilityLabel("\(scene.peak.name), \(Int((scene.fraction * 100).rounded())) percent of the way up")
     }
@@ -237,30 +307,28 @@ struct MountainSceneView: View {
         switch ink {
         case .today: SummitInk.tomato
         case .todayBonus: SummitInk.bonus
-        case .earlier: .white.opacity(0.72)
+        case .earlier: .white.opacity(0.78)
         case .earlierBonus: SummitInk.bonus.opacity(0.62)
         }
     }
 
     private func width(_ ink: SummitScene.Ink) -> CGFloat {
-        guard showsMarkers else { return 2 }
         switch ink {
-        case .today, .todayBonus: return 2.6
-        case .earlier, .earlierBonus: return 2
+        case .today, .todayBonus: isCompact ? 2.2 : 2.6
+        case .earlier, .earlierBonus: 2
         }
     }
 
-    private func draw(_ marker: SummitScene.Marker, at point: CGPoint, scale: CGFloat, in context: inout GraphicsContext) {
-        let size = max(scale, 0.75)
+    private func draw(_ marker: SummitScene.Marker, at point: CGPoint, in context: inout GraphicsContext) {
         if marker.isJar {
-            let body = CGRect(x: point.x - 4.5 * size, y: point.y - 4.5 * size, width: 9 * size, height: 11 * size)
-            let jar = Path(roundedRect: body, cornerRadius: 2.2 * size, style: .continuous)
+            let body = CGRect(x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 11)
+            let jar = Path(roundedRect: body, cornerRadius: 2.2, style: .continuous)
             context.fill(jar, with: .color(SummitInk.tomato))
             context.stroke(jar, with: .color(SummitInk.ring), lineWidth: 1.4)
-            let lid = Path(roundedRect: CGRect(x: body.minX + 0.5 * size, y: body.minY - 2.6 * size, width: 8 * size, height: 2.6 * size), cornerRadius: 1.2 * size)
+            let lid = Path(roundedRect: CGRect(x: body.minX + 0.5, y: body.minY - 2.6, width: 8, height: 2.6), cornerRadius: 1.2)
             context.fill(lid, with: .color(SummitInk.lid))
         } else {
-            let radius = (marker.isToday ? 4.4 : 3.3) * size
+            let radius: CGFloat = marker.isToday ? 4.4 : 3.3
             let tomato = Path(ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
             context.fill(tomato, with: .color(SummitInk.tomato))
             context.stroke(tomato, with: .color(SummitInk.ring), lineWidth: 1.4)

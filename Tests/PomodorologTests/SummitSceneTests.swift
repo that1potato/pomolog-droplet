@@ -10,13 +10,41 @@ import Testing
         RewardsSnapshot(records: sample, today: "2026-11-15")
     }
 
-    @Test func theTrailRunsFromTheFootToTheTopAndOnlyClimbs() {
-        #expect(TrailGeometry.point(at: 0) == TrailGeometry.foot)
-        #expect(TrailGeometry.point(at: 1) == TrailGeometry.top)
-        let heights = stride(from: 0.0, through: 1.0, by: 0.05).map { TrailGeometry.point(at: $0).y }
-        #expect(zip(heights, heights.dropFirst()).allSatisfy { $0 > $1 })
-        // A stretch across the first hairpin keeps its corners.
-        #expect(TrailGeometry.points(from: 0.3, to: 0.5).count == 4)
+    @Test func everyPeakHasAPictureAndATrailInsideIt() {
+        #expect(PeakScenes.all.count == Peaks.all.count)
+        for art in PeakScenes.all {
+            #expect(!art.planes.isEmpty)
+            #expect(art.planes.allSatisfy { $0.points.count >= 3 })
+            let inside = CGRect(origin: .zero, size: PeakScenes.size).insetBy(dx: -1, dy: -1)
+            #expect(art.trail.points.allSatisfy(inside.contains))
+            #expect(art.huts.allSatisfy(inside.contains))
+        }
+    }
+
+    @Test func everyTrailRunsFromItsFootToItsTopAndOnlyClimbs() {
+        for art in PeakScenes.all {
+            let trail = art.trail
+            #expect(trail.point(at: 0) == trail.foot)
+            #expect(trail.point(at: 1) == trail.top)
+            #expect(trail.foot.y > trail.top.y)
+            let heights = stride(from: 0.0, through: 1.0, by: 0.05).map { trail.point(at: $0).y }
+            #expect(zip(heights, heights.dropFirst()).allSatisfy { $0 > $1 })
+        }
+    }
+
+    @Test func aStretchOfTrailKeepsItsBendsAndItsEnds() {
+        // Mount Fuji's switchbacks are between the fifth station and the rim.
+        let trail = PeakScenes.all[1].trail
+        let stretch = trail.points(from: 0.6, to: 0.9)
+        #expect(stretch.first == trail.point(at: 0.6))
+        #expect(stretch.last == trail.point(at: 0.9))
+        #expect(stretch.count > 10)
+        #expect(trail.points(from: 0.5, to: 0.5).count == 2)
+    }
+
+    @Test func theSceneDrawsThePeakItStandsOn() {
+        let scene = SummitScene(rewards: rewards, today: "2026-11-15")
+        #expect(scene.art.trail == PeakScenes.all[2].trail)
     }
 
     @Test func theSampleWeekStandsHalfwayUpMontBlanc() {

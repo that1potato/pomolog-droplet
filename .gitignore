@@ -9,3 +9,6 @@ AGENTS.md
 CLAUDE.md
 .mcp.json
 .cursor/
+
+# Python bytecode from the drawing scripts in docs/summit/generator.
+__pycache__/
