@@ -2,9 +2,9 @@
 
 The Summit widget shows the peak you are climbing as a flat, faceted picture
 that fills the whole tile, with your trail drawn on it. There are seven peaks,
-climbed in this order. Each was drawn against a photograph of its best-known
-view, at close to its real proportions, and its trail follows a real route
-where that view can show one.
+and you pick the one to climb in the expedition log, in any order. Each was
+drawn against a photograph of its best-known view, at close to its real
+proportions, and its trail follows a real route where that view can show one.
 
 The drawings below are the widget at its real size, 480 × 232 points, with
 sample numbers. Beside each is the photograph it was drawn from.
@@ -117,6 +117,17 @@ stretched several times over; at true scale it would be almost flat.
 
 Photo: [Olympus Mons, ESA Mars Express](https://commons.wikimedia.org/wiki/File:Olympus_Mons_-_ESA_Mars_Express_-_Flickr_-_Andrea_Luck.png)
 by ESA/DLR/FU Berlin/Andrea Luck, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0).
+
+## With no climb under way
+
+Until you pick a mountain, and again once you reach a top, the widget shows no
+peak in particular: one generic mountain in the same greys, low in the corner,
+a few gulls in the sky, and a line pointing to the expedition log. It has no
+reference photograph. Its shapes are written straight into
+[EmptySky.swift](../../Sources/Pomodorolog/Surfaces/EmptySky.swift), not
+generated; this preview was drawn from the same numbers.
+
+<img src="no-climb.svg" width="440" alt="The Summit widget with no climb under way">
 
 ## The photographs
 
