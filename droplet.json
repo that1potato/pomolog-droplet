@@ -13,8 +13,7 @@
   "capabilities": [
     "hud",
     "expanded-surface",
-    "shelf-read",
-    "shelf-write"
+    "shelf-read"
   ],
   "surfaces": [
     "shelf-widget",

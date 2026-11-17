@@ -25,8 +25,9 @@ logged.
   They wait while the shelf is open.
 - Settings has a Summit section and explains how the climb works.
 - Picks are saved in `expeditions.json` beside the session log.
-- The droplet now asks for the hud, expanded-surface, shelf-read and
-  shelf-write capabilities.
+- The droplet now asks for the hud, expanded-surface and shelf-read
+  capabilities: to show moments in the notch, to open the expedition log, and
+  to hold a moment while the shelf is open.
 
 ## [2.0.0] - 2026-11-15
 
