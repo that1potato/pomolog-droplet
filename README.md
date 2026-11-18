@@ -15,6 +15,11 @@ Built with [DroppyKit](https://getdroppy.app/docs/droppykit).
 > isn't there. It is unofficial, and not affiliated with or endorsed by
 > Droppy.
 
+> [!NOTE]
+> **Made with AI.** Pomolog is built with
+> [Claude Code](https://claude.com/claude-code), Anthropic's AI coding
+> assistant. Pomolog itself has no AI features.
+
 Version 1 was a timer of its own, modelled on Droppy's Pomodoro. Version 2
 drops it: the built-in timer is better than a copy, and all the log needed was
 a way to see it. The droplet's id and code keep the name it started with,
