@@ -14,8 +14,6 @@ The timer is Droppy's own now, so everything here builds on the log.
   exist, and `SessionStore.update` writes the change.
 - **Focus titles in History.** Droppy's Pomodoro can give a session a title,
   and the log keeps it in `title`, but History doesn't show it yet.
-- **A small shelf widget** with today's focus and the streak. It would bring
-  back the `shelf-widget` surface, read-only this time.
 - **Tools for AI apps** (`MCPToolProviding`) once Droppy ships DroppyKit 1.21
   or later, to answer "how much did I focus this week".
 

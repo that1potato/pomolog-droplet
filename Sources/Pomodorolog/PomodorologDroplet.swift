@@ -30,7 +30,7 @@ public final class PomodorologDroplet: NSObject, ObservableObject, Droplet {
     public nonisolated static let id: DropletID = "pomodorolog"
 
     /// Written into every log record. Keep in step with droplet.json.
-    static let version = "2.0.0"
+    static let version = "2.1.0"
 
     /// How often Droppy's Pomodoro is read: often while a session runs, so a
     /// pause or a stop lands within half a second, and less often while idle,

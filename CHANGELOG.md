@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.0] - 2026-11-18
 
 Your focus sessions now climb mountains. Nothing changes in how sessions are
 logged.
