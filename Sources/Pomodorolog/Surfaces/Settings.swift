@@ -108,7 +108,7 @@ private struct PomodoroSettings: View {
                         "History",
                         subtitle: "Every session, by day.",
                         page: PomodorologDroplet.historyPageID,
-                        icon: nil
+                        icon: SettingsTiles.history
                     )
                     DropletControlRow(
                         title: "Log file",
@@ -167,7 +167,7 @@ private struct SummitSettings: View {
                 "Sticker book",
                 subtitle: "\(rewards.stickers.count) of \(Stickers.all.count) found.",
                 page: PomodorologDroplet.stickerBookPageID,
-                icon: nil
+                icon: SettingsTiles.stickerBook
             )
             DropletControlRow(
                 title: "Notch moments",

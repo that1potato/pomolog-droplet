@@ -24,6 +24,8 @@ logged.
 - Notch moments: a summit, a new sticker and a filled jar show in the notch.
   They wait while the shelf is open.
 - Settings has a Summit section and explains how the climb works.
+- A new icon: a tomato with a summit flag. In Settings, the Sticker book and
+  History links have tiles of their own.
 - Picks are saved in `expeditions.json` beside the session log.
 - The droplet now asks for the hud, expanded-surface and shelf-read
   capabilities: to show moments in the notch, to open the expedition log, and
