@@ -25,6 +25,17 @@ drops it: the built-in timer is better than a copy, and all the log needed was
 a way to see it. The droplet's id and code keep the name it started with,
 `pomodorolog`.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/01-summit-widget.png" width="49%" alt="The Summit widget on Droppy's shelf: Everest, 6,200 m of 8,849 m, 70% up">
+  <img src="docs/screenshots/02-expedition-log.png" width="49%" alt="The expedition log: the seven peaks, today's climb, the week's tomatoes and jars, and the stickers found">
+  <img src="docs/screenshots/03-summit-moment.png" width="49%" alt="A notch moment for reaching the top of Mount Fuji">
+  <img src="docs/screenshots/04-settings.png" width="49%" alt="Pomolog's page in Droppy's Settings: Droppy's Pomodoro is being logged, and the climb so far">
+  <img src="docs/screenshots/05-history.png" width="49%" alt="History in Droppy's Settings: today's sessions, each with its times and length">
+  <img src="docs/screenshots/06-sticker-book.png" width="49%" alt="The sticker book in Droppy's Settings: the summits reached and the stickers found, with their dates">
+</p>
+
 ## What it does
 
 - **Logs Droppy's Pomodoro.** For every Focus and Break: when it started and
